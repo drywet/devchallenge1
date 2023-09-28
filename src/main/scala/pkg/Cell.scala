@@ -12,12 +12,8 @@ case class CellValueNumber(value: Double) extends CellValueParsed {
 
 /** @param value Non-empty string */
 case class CellValueString(value: String) extends CellValueParsed {
-  require(value.nonEmpty, "Empty string values should be represented as CellValueEmpty")
+  require(value.nonEmpty, "Empty string values are not supported")
   def number()(implicit cellEvaluator: CellEvaluator): Option[Double] = None
-}
-
-case object CellValueEmpty extends CellValueParsed {
-  def number()(implicit cellEvaluator: CellEvaluator): Option[Double] = Some(0.0)
 }
 
 case class CellValueExpr(value: Expr) extends CellValueParsed {

@@ -11,7 +11,7 @@ import scala.util.{Failure, Success}
 
 trait Sheet {
   def getCellValue(name: String): Option[(String, Option[String])]
-  def putCellValue(name: String, sourceValue: String): (String, Option[String])
+  def putCellValue(name: String, sourceValue: String): Option[String]
 }
 
 trait CellEvaluator {
@@ -43,7 +43,6 @@ class SheetImpl extends Sheet with CellEvaluator {
             parsed match {
               case x: CellValueNumber => Some(cellDoubleFormat(x.value))
               case x: CellValueString => Some(x.value)
-              case CellValueEmpty     => CellValueEmpty.number()(cellEvaluator = this).map(cellDoubleFormat)
               case x: CellValueExpr   => x.number()(cellEvaluator = this).map(cellDoubleFormat)
             }
           case None => None
@@ -55,8 +54,8 @@ class SheetImpl extends Sheet with CellEvaluator {
     result
   }
 
-  /** @return sourceValue: String, evaluatedResult: None or error, Some otherwise. Empty cell value => Some(0.0) */
-  def putCellValue(name: String, sourceValue: String): (String, Option[String]) = {
+  /** @return evaluatedResult: None or error, Some otherwise. Empty cell value => Some(0.0) */
+  def putCellValue(name: String, sourceValue: String): Option[String] = {
     require(name.trim.nonEmpty, "Cell name should be non-empty")
     val lockStamp         = lock.writeLock()
     val previousCellValue = cells.get(name).map(_.value)
@@ -90,7 +89,7 @@ class SheetImpl extends Sheet with CellEvaluator {
           } else if (sourceValue.nonEmpty) {
             Some(CellValueString(sourceValue)) -> Some(sourceValue)
           } else {
-            Some(CellValueEmpty) -> Some("")
+            None -> None
           }
         cell.value = CellValue(sourceValue, parsedValue)
         cell.beingEvaluated = false
@@ -102,9 +101,8 @@ class SheetImpl extends Sheet with CellEvaluator {
         case None        => cells.remove(cell.name)
       }
     }
-    val result: (String, Option[String]) = cell.value.source -> evaluatedResult
     lock.unlockWrite(lockStamp)
-    result
+    evaluatedResult
   }
 
   private def getCellOrCreate(name: String): Cell =
