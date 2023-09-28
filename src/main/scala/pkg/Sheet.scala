@@ -22,10 +22,16 @@ trait CellEvaluator {
 // On adding a cell, the expression is evaluated shallowly since all cells store cached evaluated values;
 // If a cell is updated (not created) then cells in the expression (bottom deps) are traversed in depth to make sure there are no circular dependencies.
 //   Each cell should store an IdentityHashSet of cells it directly depends on, for fast tree traversal - this set reflects the cells mentioned in the cell's expression
-// If the expression and bottom deps are ok or the value being stored is a number/string and the cell is updated (not created) then check cells that depend on this cell (top deps)
-//   Depth-traversal: temporary evaluated value is stored to another tempCachedValue field; All traversed top cells are added to a list.
-//   after evaluation - if ok, for all traversed top cells, copy tempCachedValue to cachedValue.
-// If evaluation / deps check fails, the cell value is reverted or the cell is removed, and 422 is returned.
+// If the expression and bottom deps are ok or the value being stored is a number/string
+//   set cell value
+//   if the cell is updated (not created) then check cells that depend on this cell (top deps)
+//     Depth-traversal: temporary evaluated value is stored to another tempCachedValue field; All traversed top cells are added to a list.
+//     after evaluation:
+//      if ok, for all traversed top cells, copy tempCachedValue to cachedValue;
+//      in any case - set all traversed tempCachedValue back to None
+// If evaluation or deps checks fail, the cell value is reverted or the cell is removed, and 422 is returned.
+//
+// Note: during cell evaluation, tempCachedValue should be used if it is present, and cachedValue otherwise
 
 // TODO tree with propagation on writes:
 //   write: 1 + tree propagation (log n in the average case, n in the worst case)
@@ -69,7 +75,7 @@ class SheetImpl extends Sheet with CellEvaluator {
     val lockStamp         = lock.writeLock()
     val previousCellValue = cells.get(name).map(_.value)
     val cell              = getCellOrCreate(name)
-    val evaluatedResult: Option[String] =
+    val (parsedValue: Option[CellValueParsed], evaluatedResult: Option[String]) =
       if (cell.beingEvaluated) {
         throw new IllegalStateException(
           s"Cell '$name' beingEvaluated=true on cell put is unexpected here " +
@@ -100,14 +106,15 @@ class SheetImpl extends Sheet with CellEvaluator {
           } else {
             None -> None
           }
-        cell.value = CellValue(sourceValue, parsedValue)
         cell.beingEvaluated = false
-        evaluatedResult
+        (parsedValue, evaluatedResult)
       }
-    if (evaluatedResult.isEmpty) {
+    if (evaluatedResult.nonEmpty) {
+      cell.value = new CellValue(sourceValue, parsedValue)
+    } else {
       previousCellValue match {
-        case Some(value) => cell.value = value
-        case None        => cells.remove(cell.name)
+        case Some(previousValue) => cell.value = previousValue
+        case None                => cells.remove(cell.name)
       }
     }
     lock.unlockWrite(lockStamp)

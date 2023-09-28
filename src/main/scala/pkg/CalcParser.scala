@@ -2,8 +2,12 @@ package pkg
 
 import org.parboiled2._
 
+/** Based on <a href="https://github.com/sirthias/parboiled2/blob/master/examples/src/main/scala/org/parboiled2/examples/Calculator2.scala">Calculator2.scala</a>
+ * Extended with support for float numbers and variables */
 object CalcParser {
 
+  /** Evaluate a parsed expression
+   * @return None on failure, Some otherwise */
   def evaluate(expr: Expr)(implicit cellEvaluator: CellEvaluator): Option[Double] =
     expr match {
       case NumberValue(v)       => v.toDoubleOption
@@ -14,35 +18,33 @@ object CalcParser {
       case Division(a, b)       => evaluate(a).flatMap(a => evaluate(b).map(b => a / b))
     }
 
-  // our abstract syntax tree model
+  // Abstract syntax tree model
   sealed trait Expr
 
-  case class NumberValue(value: String) extends Expr
+  private case class NumberValue(value: String) extends Expr
 
-  case class VariableValue(name: String) extends Expr
+  private case class VariableValue(name: String) extends Expr
 
-  case class Addition(lhs: Expr, rhs: Expr) extends Expr
+  private case class Addition(lhs: Expr, rhs: Expr) extends Expr
 
-  case class Subtraction(lhs: Expr, rhs: Expr) extends Expr
+  private case class Subtraction(lhs: Expr, rhs: Expr) extends Expr
 
-  case class Multiplication(lhs: Expr, rhs: Expr) extends Expr
+  private case class Multiplication(lhs: Expr, rhs: Expr) extends Expr
 
-  case class Division(lhs: Expr, rhs: Expr) extends Expr
+  private case class Division(lhs: Expr, rhs: Expr) extends Expr
 
 }
 
-/** This parser reads simple calculator expressions and builds an AST
+/** This parser reads calculator expressions and builds an AST
  * for them, to be evaluated in a separate phase, after parsing is completed.
  */
 class CalcParser(val input: ParserInput) extends Parser {
 
   import CalcParser._
 
-  // val opsPredicate: CharPredicate = CharPredicate('+', '-', '*', '/', '(', ')')
+  def InputLine: Rule1[Expr] = rule(Expression ~ EOI)
 
-  def InputLine = rule(Expression ~ EOI)
-
-  def Expression: Rule1[Expr] =
+  private def Expression: Rule1[Expr] =
     rule {
       Term ~ zeroOrMore(
         '+' ~ Term ~> Addition.apply _
@@ -50,7 +52,7 @@ class CalcParser(val input: ParserInput) extends Parser {
       )
     }
 
-  def Term =
+  private def Term: Rule1[Expr] =
     rule {
       Factor ~ zeroOrMore(
         '*' ~ Factor ~> Multiplication.apply _
@@ -58,24 +60,26 @@ class CalcParser(val input: ParserInput) extends Parser {
       )
     }
 
-  def Factor = rule(Number | Variable | Parens)
+  private def Factor: Rule1[Expr] = rule(Number | Variable | Parens)
 
-  def Parens = rule('(' ~ Expression ~ ')')
+  private def Parens: Rule1[Expr] = rule('(' ~ Expression ~ ')')
 
-  def Number = rule(capture(Float) ~> NumberValue.apply _)
+  private def Number: Rule1[NumberValue] = rule(capture(Float) ~> NumberValue.apply _)
 
-  def Float = rule(
+  private def Float: Rule0 = rule(
     optional(CharPredicate('+', '-')) ~ FloatDigits ~ optional(FloatExponent)
   )
 
-  def FloatDigits = rule(
+  private def FloatDigits: Rule0 = rule(
     (oneOrMore(CharPredicate.Digit) ~ optional(CharPredicate('.')) ~ zeroOrMore(CharPredicate.Digit)) |
       (CharPredicate('.') ~ oneOrMore(CharPredicate.Digit))
   )
 
-  def FloatExponent = rule(CharPredicate('e') ~ optional(CharPredicate('+', '-')) ~ oneOrMore(CharPredicate.Digit))
+  private def FloatExponent: Rule0 = rule(
+    CharPredicate('e') ~ optional(CharPredicate('+', '-')) ~ oneOrMore(CharPredicate.Digit)
+  )
 
-  def Variable =
+  private def Variable: Rule1[VariableValue] =
     // No support for variables starting with a digit, because `1e1` should be a number, not a variable
     rule(capture(CharPredicate.Alpha ~ zeroOrMore(CharPredicate.AlphaNum)) ~> VariableValue.apply _)
 
