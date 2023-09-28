@@ -8,15 +8,25 @@ object CalcParser {
 
   /** Evaluate a parsed expression
    * @return None on failure, Some otherwise */
-  def evaluate(expr: Expr)(implicit cellEvaluator: CellEvaluator): Option[Double] =
+  def evaluate(expr: Expr)(implicit cellEvaluator: CellEvaluator): Option[Either[String, Double]] =
     expr match {
-      case NumberValue(v)       => v.toDoubleOption
-      case VariableValue(name)  => cellEvaluator.getAndEvaluateCellAsNumber(name)
-      case Addition(a, b)       => evaluate(a).flatMap(a => evaluate(b).map(b => a + b))
-      case Subtraction(a, b)    => evaluate(a).flatMap(a => evaluate(b).map(b => a - b))
-      case Multiplication(a, b) => evaluate(a).flatMap(a => evaluate(b).map(b => a * b))
-      case Division(a, b)       => evaluate(a).flatMap(a => evaluate(b).map(b => a / b))
+      case NumberValue(v)       => v.toDoubleOption.map(Right(_))
+      case VariableValue(name)  => cellEvaluator.getAndEvaluateCell(name)
+      case Addition(a, b)       => numberOp(a, b, _ + _) // TODO make op methods?
+      case Subtraction(a, b)    => numberOp(a, b, _ - _)
+      case Multiplication(a, b) => numberOp(a, b, _ * _)
+      case Division(a, b)       => numberOp(a, b, _ / _)
     }
+
+  private def numberOp(a: Expr, b: Expr, op: (Double, Double) => Double)(implicit
+      cellEvaluator: CellEvaluator
+  ): Option[Right[String, Double]] = {
+    val res = for {
+      a <- evaluate(a).flatMap(_.toOption)
+      b <- evaluate(b).flatMap(_.toOption)
+    } yield op(a, b)
+    res.map(Right(_))
+  }
 
   // Abstract syntax tree model
   sealed trait Expr

@@ -14,33 +14,39 @@ class SheetSpec extends AnyFlatSpec with should.Matchers {
     sheet.getCellValue("a1") shouldEqual None
     sheet.getCellValue("1") shouldEqual None
     sheet.getCellValue("1") shouldEqual None
-    sheet.putCellValue("a1", "1") shouldEqual Some("1")
-    sheet.getCellValue("a1") shouldEqual Some(("1", Some("1")))
-    sheet.putCellValue("a2", "=a1+1") shouldEqual Some("2")
-    sheet.putCellValue("a1", "3") shouldEqual Some("3")
-    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Some("4")))
+    sheet.putCellValue("a1", "1") shouldEqual Some(Right(1))
+    sheet.getCellValue("a1") shouldEqual Some(("1", Right(1)))
+    sheet.putCellValue("a2", "=a1+1") shouldEqual Some(Right(2))
+    sheet.putCellValue("a1", "3") shouldEqual Some(Right(3))
+    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(4)))
 
     sheet.putCellValue("a1", "=a2") shouldEqual None
-    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Some("4")))
-    sheet.putCellValue("a1", "5") shouldEqual Some("5")
-    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Some("6")))
+    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(4)))
+    sheet.putCellValue("a1", "5") shouldEqual Some(Right(5))
+    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(6)))
 
     sheet.putCellValue("a1", "") shouldEqual None
-    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Some("6")))
+    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(6)))
 
-    sheet.putCellValue("a1", "=a3") shouldEqual Some("0")
-    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Some("1")))
+    sheet.putCellValue("a1", "=a3") shouldEqual None
+    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(6)))
     sheet.getCellValue("a3") shouldEqual None
 
-    sheet.putCellValue("a1", "a1") shouldEqual Some("a1")
-    sheet.getCellValue("a1") shouldEqual Some(("a1", Some("a1")))
-    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", None))
+    sheet.putCellValue("a1", "a1") shouldEqual None
+    sheet.getCellValue("a1") shouldEqual Some(("a1", Right(5)))
+    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(6)))
 
-    sheet.putCellValue("a1", "=((123+456*(2+-1))+789)/0.1") shouldEqual Some("13680")
+    sheet.putCellValue("a1", "=((123+456*(2+-1))+789)/0.1") shouldEqual Some(Right(13680))
     sheet.putCellValue("a1", "=123e-4 + 56e7 + 8.9e10 + .12e+3 + 4e5 + 6e0") shouldEqual
-    Some("8.95604001260123E10")
-    sheet.putCellValue("a1", "1e150") shouldEqual Some("1.0E150")
-    sheet.putCellValue("a1", "=1e150") shouldEqual Some("1.0E150")
+    Some(Right(8.95604001260123e10))
+    sheet.putCellValue("a1", "1e150") shouldEqual Some(Right(1.0e150))
+    sheet.putCellValue("a1", "=1e150") shouldEqual Some(Right(1.0e150))
+
+    sheet.putCellValue("a2", "a2") shouldEqual Some(Left("a2"))
+    sheet.getCellValue("a2") shouldEqual Some("a2", Left("a2"))
+
+    sheet.putCellValue("a1", "=a2") shouldEqual Some(Left("a2"))
+    sheet.getCellValue("a1") shouldEqual Some("=a2", Left("a2"))
 
     an[IllegalArgumentException] shouldBe thrownBy {
       sheet.getCellValue("")

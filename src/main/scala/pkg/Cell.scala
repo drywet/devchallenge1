@@ -1,26 +1,26 @@
 package pkg
 
-import pkg.CalcParser.{Expr, evaluate}
+import pkg.CalcParser.Expr
 
 sealed trait CellValueParsed {
-  def number()(implicit cellEvaluator: CellEvaluator): Option[Double]
+  def evaluate()(implicit cellEvaluator: CellEvaluator): Option[Either[String, Double]]
 }
 
 case class CellValueNumber(value: Double) extends CellValueParsed {
-  def number()(implicit cellEvaluator: CellEvaluator): Option[Double] = Some(value)
+  def evaluate()(implicit cellEvaluator: CellEvaluator): Option[Right[String, Double]] = Some(Right(value))
 }
 
 /** @param value Non-empty string */
 case class CellValueString(value: String) extends CellValueParsed {
   require(value.nonEmpty, "Empty string values are not supported")
-  def number()(implicit cellEvaluator: CellEvaluator): Option[Double] = None
+  def evaluate()(implicit cellEvaluator: CellEvaluator): Option[Left[String, Double]] = Some(Left(value))
 }
 
 case class CellValueExpr(value: Expr) extends CellValueParsed {
-  def number()(implicit cellEvaluator: CellEvaluator): Option[Double] = evaluate(value)
+  def evaluate()(implicit cellEvaluator: CellEvaluator): Option[Either[String, Double]] = CalcParser.evaluate(value)
 }
 
-/** In a Sheet, every cell has only one unique instance, so it's possible to compare cells by reference, 
+/** In a Sheet, every cell has only one unique instance, so it's possible to compare cells by reference for better performance, 
  * keeping the default equals/hashCode implementation, hence this class isn't a case class.
  * @param source Original string value to be parsed as a number/string/expression
  * @param parsed None value is possible only for cells that are being created.
