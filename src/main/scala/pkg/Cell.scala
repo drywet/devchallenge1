@@ -20,7 +20,7 @@ case class CellValueExpr(value: Expr) extends CellValueParsed {
   def number()(implicit cellEvaluator: CellEvaluator): Option[Double] = evaluate(value)
 }
 
-/** @param parsed None on error, Some otherwise */
+/** @param parsed None on error, Some otherwise */ // TODO can parsed be None?
 case class CellValue(source: String, parsed: Option[CellValueParsed])
 
 object CellValue {
