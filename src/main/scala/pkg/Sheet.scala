@@ -19,7 +19,13 @@ trait CellEvaluator {
   def getEvaluatedCellValue(name: String): Option[Either[String, Double]]
 }
 
-// TODO Increase stack size and add a tests for long deps chains updates at the bottom and at the top
+// TODO Optimization:
+//  check if cell is updated (not created) and the sourceValue is actually different from the previous before checking bottomCells and topCells
+//  on update, only newly added bottomCells have to be traversed
+//  on update, only traverse topDeps if the evaluated result is different from the previously stored one
+//  replace sets with ArraySeq where possible
+
+// TODO Increase stack size and add tests for long deps chains updates at the bottom and at the top
 
 // TODO Add HTTP API and choose the optimal number of worker threads
 //  Docker
@@ -62,7 +68,7 @@ class SheetImpl extends Sheet with CellEvaluator {
    *       Set previousEvaluated=evaluated
    *       Set evaluated=evaluate()
    *     If any evaluation fails, restore previous evaluated values for the updated cells
-   *     Set previousEvaluated=None and traversed=false for all evaluated cells
+   *     Set previousEvaluated=None for all evaluated cells
    * If evaluation or deps checks fail, the cell value is reverted or the cell is removed;
    * otherwise, on success, put the cell to the top cells sets of its bottom cells and remove the cell from the top cells sets of no longer referenced cells 
    *
@@ -91,27 +97,7 @@ class SheetImpl extends Sheet with CellEvaluator {
             evaluatedResult = evaluatedResult
           )
           if (!hasCircularDeps(cell)) {
-            val topCells: ArraySeq[Cell] = allTopCellsTopologicallySorted(cell)
-            var i                        = 0
-            var evaluationFailed         = false
-            while (i < topCells.size && !evaluationFailed) {
-              topCells(i).value.parsed.evaluate()(cellEvaluator = this) match {
-                case Some(evaluatedResult) =>
-                  topCells(i).value.previousEvaluated = Some(topCells(i).value.evaluated)
-                  topCells(i).value.evaluated = evaluatedResult
-                case None =>
-                  evaluationFailed = true
-              }
-              i += 1
-            }
-            if (evaluationFailed) {
-              (0 until (i - 1)).foreach(j => topCells(j).value.evaluated = topCells(j).value.previousEvaluated.get)
-            }
-            (0 until i).foreach { j =>
-              topCells(j).value.previousEvaluated = None
-              topCells(j).value.traversed = false
-            }
-            if (!evaluationFailed) Some(cell -> noLongerReferencedCells) else None
+            if (reevaluateTopCells(cell)) Some(cell -> noLongerReferencedCells) else None
           } else None
       }
     result match {
@@ -208,6 +194,28 @@ class SheetImpl extends Sheet with CellEvaluator {
     cell.value.bottomCells.exists(loop)
   }
 
+  /** @return true on success, false otherwise */
+  private def reevaluateTopCells(cell: Cell): Boolean = {
+    val topCells: ArraySeq[Cell] = allTopCellsTopologicallySorted(cell)
+    var i                        = 0
+    var evaluationFailed         = false
+    while (i < topCells.size && !evaluationFailed) {
+      topCells(i).value.parsed.evaluate()(cellEvaluator = this) match {
+        case Some(evaluatedResult) =>
+          topCells(i).value.previousEvaluated = Some(topCells(i).value.evaluated)
+          topCells(i).value.evaluated = evaluatedResult
+        case None =>
+          evaluationFailed = true
+      }
+      i += 1
+    }
+    if (evaluationFailed) {
+      (0 until (i - 1)).foreach(j => topCells(j).value.evaluated = topCells(j).value.previousEvaluated.get)
+    }
+    (0 until i).foreach(j => topCells(j).value.previousEvaluated = None)
+    !evaluationFailed
+  }
+
   // TODO Test
   /** @return All top cells sorted such that no cell mentions any of subsequent cells in its topCells set */
   def allTopCellsTopologicallySorted(cell: Cell): ArraySeq[Cell] = {
@@ -227,11 +235,24 @@ class SheetImpl extends Sheet with CellEvaluator {
         loop(cell)
     }
 
-    sorted.result()
+    // In-place reverse
+    val reversed: ArraySeq[Cell] = sorted.result()
+    val array: Array[Cell]       = reversed.unsafeArray.asInstanceOf[Array[Cell]]
+    (0 until (reversed.length / 2)).foreach { i =>
+      val a = array(i)
+      array(i) = array(reversed.length - 1 - i)
+      array(reversed.length - 1 - i) = a
+    }
+
+    reversed.foreach(_.value.traversed = false)
+
+    reversed
   }
 
   /** @return None if the cell doesn't exist, Some otherwise */
   override def getEvaluatedCellValue(name: String): Option[Either[String, Double]] =
     cells.get(name).map(_.value.evaluated)
+
+  def getCell(name: String): Option[Cell] = cells.get(name)
 
 }

@@ -54,6 +54,30 @@ class SheetSpec extends AnyFlatSpec with should.Matchers {
     }
   }
 
+  it should "check topological sorting" in {
+    val sheet: SheetImpl = new SheetImpl()
+    sheet.putCellValue("a", "1") shouldEqual Some(Right(1))
+    sheet.putCellValue("b", "=a+1") shouldEqual Some(Right(2))
+    sheet.putCellValue("c", "=b+a") shouldEqual Some(Right(3))
+    sheet.putCellValue("d", "=c+b+1") shouldEqual Some(Right(6))
+    sheet.putCellValue("e", "=c+d+1") shouldEqual Some(Right(10))
+
+    sheet.putCellValue("c", "=d") shouldEqual None
+    sheet.putCellValue("a", "=e") shouldEqual None
+
+    sheet.putCellValue("c", "=b+10") shouldEqual Some(Right(12))
+
+    sheet.allTopCellsTopologicallySorted(sheet.getCell("c").get).map(_.name) shouldEqual Seq("d", "e")
+    sheet.allTopCellsTopologicallySorted(sheet.getCell("e").get).map(_.name) shouldEqual Seq.empty
+    sheet.allTopCellsTopologicallySorted(sheet.getCell("a").get).map(_.name) shouldEqual Seq("b", "c", "d", "e")
+
+    sheet.getCellValue("a") shouldEqual Some(("1", Right(1)))
+    sheet.getCellValue("b") shouldEqual Some(("=a+1", Right(2)))
+    sheet.getCellValue("c") shouldEqual Some(("=b+10", Right(12)))
+    sheet.getCellValue("d") shouldEqual Some(("=c+b+1", Right(15)))
+    sheet.getCellValue("e") shouldEqual Some(("=c+d+1", Right(28)))
+  }
+
   it should "perf test" in {
     time("Simple value", 1e6.toInt) {
       val sheet: Sheet = new SheetImpl()
