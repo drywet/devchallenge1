@@ -19,17 +19,21 @@ trait CellEvaluator {
 
 // TODO Don't store values that break other values. This reverse dependency tracking can be combined with the write cache.
 // On adding a cell, the expression is evaluated shallowly since all cells store cached evaluated values;
-// If a cell is updated (not created) then cells in the expression (bottom deps) are traversed in depth to make sure there are no circular dependencies.
-//   Each cell should store an IdentityHashSet of cells it directly depends on, for fast tree traversal - this set reflects the cells mentioned in the cell's expression
-// If the expression and bottom deps are ok or the value being stored is a number/string
+// If a cell is updated (not created) then cells in the expression (bottom cells) are traversed in depth to make sure there are no circular dependencies.
+//   Each cell should store a set of cells it directly depends on, for fast tree traversal. It's specified together with the parsed value
+//   Each cell also stores a set of cells that directly depend on it. It's updated at the end on success after all checks
+// If the expression and bottom cells are ok or the value being stored is a number/string
 //   set cell value
-//   if the cell is updated (not created) then check cells that depend on this cell (top deps)
-//     Depth-traversal: temporary evaluated value is stored to another tempCachedValue field; All traversed top cells are added to a list.
-//       Note: during cell evaluation, tempCachedValue should be used if it is present, and cachedValue otherwise
+//   if the cell is updated (not created) then check cells that depend on this cell (top cells)
+//     Depth-traversal: temporary evaluated value is stored to another tempEvaluated field; All traversed top cells are added to a list.
+//       Note: during cell evaluation, tempEvaluated should be used if it is present, and `evaluated` otherwise
 //     after evaluation:
-//      if ok, for all traversed top cells, copy tempCachedValue to cachedValue;
-//      in any case - set all traversed tempCachedValue back to None
+//      if ok, for all traversed top cells, copy tempEvaluated to `evaluated`;
+//      in any case - set all traversed tempEvaluated back to None
 // If evaluation or deps checks fail, the cell value is reverted or the cell is removed, and 422 is returned.
+// otherwise, on success, put the cell to the top cells sets of its bottom cells
+
+// TODO Increase stack size and add a tests for long deps chains updates at the bottom and at the top
 
 // TODO tree with propagation on writes:
 //   write: 1 + tree propagation (log n in the average case, n in the worst case)
