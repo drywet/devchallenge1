@@ -16,7 +16,7 @@ trait Sheet {
 trait CellEvaluator {
 
   /** @return None if the cell doesn't exist, Some otherwise */
-  def getAndEvaluateCell(name: String): Option[Either[String, Double]]
+  def getEvaluatedCellValue(name: String): Option[Either[String, Double]]
 }
 
 // TODO Don't store values that break other values. This reverse dependency tracking can be combined with the write cache.
@@ -105,7 +105,7 @@ class SheetImpl extends Sheet with CellEvaluator {
   }
 
   /** @return None if the cell doesn't exist, Some otherwise */
-  override def getAndEvaluateCell(name: String): Option[Either[String, Double]] =
+  override def getEvaluatedCellValue(name: String): Option[Either[String, Double]] =
     cells.get(name).map(_.value.evaluated)
 
 }

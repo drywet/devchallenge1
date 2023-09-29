@@ -11,7 +11,7 @@ object CalcParser {
   def evaluate(expr: Expr)(implicit cellEvaluator: CellEvaluator): Option[Either[String, Double]] =
     expr match {
       case NumberValue(v)       => v.toDoubleOption.map(Right(_))
-      case VariableValue(name)  => cellEvaluator.getAndEvaluateCell(name)
+      case VariableValue(name)  => cellEvaluator.getEvaluatedCellValue(name)
       case Addition(a, b)       => numberOp(a, b, _ + _) // TODO make op methods?
       case Subtraction(a, b)    => numberOp(a, b, _ - _)
       case Multiplication(a, b) => numberOp(a, b, _ * _)
