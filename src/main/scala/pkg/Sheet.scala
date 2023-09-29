@@ -1,10 +1,10 @@
 package pkg
 
 import org.parboiled2.ParseError
-import pkg.CalcParser.evaluate
 import pkg.StringUtils.normalizeFormula
 
 import java.util.concurrent.locks.StampedLock
+import scala.collection.immutable.ArraySeq
 import scala.collection.mutable
 import scala.util.{Failure, Success}
 
@@ -22,21 +22,21 @@ trait CellEvaluator {
 // TODO Don't store values that break other values. This reverse dependency tracking can be combined with the write cache.
 // -- On adding a cell, the expression is evaluated shallowly since all cells store cached evaluated values;
 // -- If a cell is updated (not created) then cells in the expression (bottom cells) are traversed in depth to make sure there are no circular dependencies.
-//   -- Update the existing cell's value
+//   -- Update the existing cell's value. Store a list of bottom cells no longer referenced in the cell expression
 //   -- Circular dependencies are detected by comparing the cell currently traversed vs the cell updated
 //   -- Each cell should store a set of cells it directly depends on, for fast tree traversal. It's specified together with the parsed value
 //   -- Each cell also stores a set of cells that directly depend on it. It's updated at the end on success, after all checks
 // -- Otherwise, if the cell doesn't exist, create the cell
 // If the expression and bottom cells are ok or the value being stored is a number/string
 //   if the cell is updated (not created) then check cells that depend on this cell (top cells)
-//     Traverse top cells of the cell and sort them topologically in a list
-//     Evaluate all cells in that order:
-//       set previousEvaluated=evaluated
-//       set evaluated=evaluate()
-//     If any evaluation fails, restore previous evaluated values for the updated cells
-//     For all cells, set previousEvaluated=None
-// If evaluation or deps checks fail, the cell value is reverted or the cell is removed, and 422 is returned.
-// otherwise, on success, put the cell to the top cells sets of its bottom cells
+//     -- Traverse top cells of the cell and sort them topologically in a list
+//     -- Evaluate all cells in that order:
+//       -- set previousEvaluated=evaluated
+//       -- set evaluated=evaluate()
+//     -- If any evaluation fails, restore previous evaluated values for the updated cells
+//     -- Set previousEvaluated=None and traversed=false for all evaluated cells
+// -- If evaluation or deps checks fail, the cell value is reverted or the cell is removed, and 422 is returned.
+// -- otherwise, on success, put the cell to the top cells sets of its bottom cells and remove the cell from the top cells sets of no longer referenced cells
 
 // TODO Increase stack size and add a tests for long deps chains updates at the bottom and at the top
 
@@ -72,26 +72,48 @@ class SheetImpl extends Sheet with CellEvaluator {
 
   /** @return evaluatedResult: None on error, Some otherwise */
   private def putCellValue2(name: String, sourceValue: String): Option[Either[String, Double]] = {
-    val cellOpt           = cells.get(name)
-    val previousCellValue = cellOpt.map(_.value)
-    parseAndEvaluateSourceValue(name, sourceValue).flatMap { case (parsedValue, evaluatedResult) =>
-      val cell = createOrUpdateCell(cellOpt, name, sourceValue, parsedValue, evaluatedResult)
-      if (!hasCircularDeps(cell)) {
-        topCellsTopologicallySorted(cell)
-        Some(cell)
-      } else None
+    val existingCell      = cells.get(name)
+    val previousCellValue = existingCell.map(_.value)
+    val result: Option[(Cell, Set[Cell])] = parseAndEvaluateSourceValue(name, sourceValue).flatMap {
+      case (parsedValue, evaluatedResult) =>
+        val (cell, noLongerReferencedCells) =
+          createOrUpdateCell(existingCell, name, sourceValue, parsedValue, evaluatedResult)
+        if (!hasCircularDeps(cell)) {
+          val topCells: ArraySeq[Cell] = allTopCellsTopologicallySorted(cell)
+          var i                        = 0
+          var evaluationFailed         = false
+          while (i < topCells.size && !evaluationFailed) {
+            topCells(i).value.parsed.evaluate()(cellEvaluator = this) match {
+              case Some(evaluatedResult) =>
+                topCells(i).value.previousEvaluated = Some(topCells(i).value.evaluated)
+                topCells(i).value.evaluated = evaluatedResult
+              case None =>
+                evaluationFailed = true
+            }
+            i += 1
+          }
+          if (evaluationFailed) {
+            (0 until i).foreach(j => topCells(j).value.evaluated = topCells(j).value.previousEvaluated.get)
+          }
+          (0 until i).foreach { j =>
+            topCells(j).value.previousEvaluated = None
+            topCells(j).value.traversed = false
+          }
+          if (!evaluationFailed) Some(cell -> noLongerReferencedCells) else None
+        } else None
     }
-    // if (evaluatedResult.isDefined) {
-    //   require(parsedValue.isDefined)
-    //   cell.value = Some(CellValue(parsedValue.get))
-    // } else {
-    //   previousCellValue match {
-    //     case Some(previousValue) => cell.value = previousValue
-    //     case None                => cells.remove(cell.name)
-    //   }
-    // }
-    // evaluatedResult
-    ()
+    result match {
+      case Some((cell, noLongerReferencedCells)) =>
+        cell.value.bottomCells.foreach(_.value.topCells += cell)
+        noLongerReferencedCells.foreach(_.value.topCells -= cell)
+        Some(cell.value.evaluated)
+      case None =>
+        existingCell match {
+          case Some(existingCell) => existingCell.value = previousCellValue.get
+          case None               => cells.remove(name)
+        }
+        None
+    }
   }
 
   /** @return Option[(parsedValue, evaluatedResult)] */
@@ -123,24 +145,28 @@ class SheetImpl extends Sheet with CellEvaluator {
     }
   }
 
+  /** @return (cell, no longer referenced cells) */
   private def createOrUpdateCell(
-                                  existingCell: Option[Cell],
-                                  name: String,
-                                  sourceValue: String,
-                                  parsedValue: CellValueParsed,
-                                  evaluatedResult: Either[String, Double]
-                                ) = {
+      existingCell: Option[Cell],
+      name: String,
+      sourceValue: String,
+      parsedValue: CellValueParsed,
+      evaluatedResult: Either[String, Double]
+  ): (Cell, Set[Cell]) = {
     existingCell match {
       case Some(existingCell) =>
+        val bottomCells             = referencedCells(parsedValue)
+        val noLongerReferencedCells = existingCell.value.bottomCells -- bottomCells
         existingCell.value = CellValue(
           source = sourceValue,
           parsed = parsedValue,
           topCells = existingCell.value.topCells,
-          bottomCells = referencedCells(parsedValue),
+          bottomCells = bottomCells,
           evaluated = evaluatedResult,
-          tempEvaluated = None
+          previousEvaluated = None,
+          traversed = false
         )
-        existingCell
+        existingCell -> noLongerReferencedCells
       case None =>
         val value = CellValue(
           source = sourceValue,
@@ -148,27 +174,49 @@ class SheetImpl extends Sheet with CellEvaluator {
           topCells = mutable.Set(),
           bottomCells = referencedCells(parsedValue),
           evaluated = evaluatedResult,
-          tempEvaluated = None
+          previousEvaluated = None,
+          traversed = false
         )
         val cell = new Cell(name, value)
         cells.put(name, cell)
-        cell
+        cell -> Set.empty
     }
-  }
-
-  private def hasCircularDeps(cell: Cell): Boolean = {
-    def loop(cell2: Cell): Boolean = {
-      (cell == cell2) || cell2.value.bottomCells.exists(loop)
-    }
-
-    loop(cell)
   }
 
   private def referencedCells(parsedValue: CellValueParsed): Set[Cell] =
     parsedValue match {
-      case CellValueExpr(expr) => CalcParser.referencedVariables(expr).map(cells.get)
+      case CellValueExpr(expr) => CalcParser.referencedVariables(expr).map(cells(_))
       case _                   => Set.empty
     }
+
+  private def hasCircularDeps(cell: Cell): Boolean = {
+    def loop(cell2: Cell): Boolean =
+      (cell == cell2) || cell2.value.bottomCells.exists(loop)
+
+    loop(cell)
+  }
+
+  // TODO Test
+  /** @return All top cells sorted such that no cell mentions any of subsequent cells in its topCells set */
+  def allTopCellsTopologicallySorted(cell: Cell): ArraySeq[Cell] = {
+    val sorted: mutable.Builder[Cell, ArraySeq[Cell]] = ArraySeq.newBuilder
+
+    def loop(cell: Cell): Unit = {
+      cell.value.traversed = true
+      cell.value.topCells.foreach { cell2 =>
+        if (!cell2.value.traversed)
+          loop(cell2)
+      }
+      sorted += cell
+    }
+
+    cell.value.topCells.foreach { cell =>
+      if (!cell.value.traversed)
+        loop(cell)
+    }
+
+    sorted.result()
+  }
 
   /** @return None if the cell doesn't exist, Some otherwise */
   override def getEvaluatedCellValue(name: String): Option[Either[String, Double]] =

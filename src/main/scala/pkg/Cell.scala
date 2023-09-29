@@ -22,20 +22,23 @@ case class CellValueExpr(expr: Expr) extends CellValueParsed {
   def evaluate()(implicit cellEvaluator: CellEvaluator): Option[Either[String, Double]] = CalcParser.evaluate(expr)
 }
 
-/**
+/** Some of the params are made variables for efficiency.
+ * 
  * @param source Original string value to be parsed as a number/string/expression
- * @param parsed parsed value: number/string/expression 
+ * @param parsed parsed value: number/string/expression
  * @param topCells cells that mention this cell in their expressions
  * @param bottomCells cells this cell mentions in the expression
- * @param evaluated cached evaluated value of [[parsed]] param             
- * @param previousEvaluated Used during bottom-up traversal during cell update/creation, and is cleared afterwards */
+ * @param evaluated cached evaluated value of [[parsed]] param
+ * @param previousEvaluated Used during bottom-up traversal during cell update/creation, and is cleared afterwards
+ * @param traversed Used during bottom-up traversal during cell update/creation, and is cleared afterwards */
 case class CellValue(
     source: String,
     parsed: CellValueParsed,
     topCells: mutable.Set[Cell],
     bottomCells: Set[Cell],
-    evaluated: Either[String, Double],
-    var previousEvaluated: Option[Either[String, Double]]
+    var evaluated: Either[String, Double],
+    var previousEvaluated: Option[Either[String, Double]],
+    var traversed: Boolean
 )
 
 /** In a Sheet, every cell has only one unique instance, so it's possible to compare cells by reference for better performance, 
