@@ -65,7 +65,7 @@ class SheetImpl extends Sheet with CellEvaluator {
     require(name.trim.nonEmpty, "Cell name should be non-empty")
     val lockStamp = lock.writeLock()
     try
-      putCellValue2(name, sourceValue)
+      putCellValue2(name = name, sourceValue = sourceValue)
     finally
       lock.unlockWrite(lockStamp)
   }
@@ -74,34 +74,40 @@ class SheetImpl extends Sheet with CellEvaluator {
   private def putCellValue2(name: String, sourceValue: String): Option[Either[String, Double]] = {
     val existingCell      = cells.get(name)
     val previousCellValue = existingCell.map(_.value)
-    val result: Option[(Cell, Set[Cell])] = parseAndEvaluateSourceValue(name, sourceValue).flatMap {
-      case (parsedValue, evaluatedResult) =>
-        val (cell, noLongerReferencedCells) =
-          createOrUpdateCell(existingCell, name, sourceValue, parsedValue, evaluatedResult)
-        if (!hasCircularDeps(cell)) {
-          val topCells: ArraySeq[Cell] = allTopCellsTopologicallySorted(cell)
-          var i                        = 0
-          var evaluationFailed         = false
-          while (i < topCells.size && !evaluationFailed) {
-            topCells(i).value.parsed.evaluate()(cellEvaluator = this) match {
-              case Some(evaluatedResult) =>
-                topCells(i).value.previousEvaluated = Some(topCells(i).value.evaluated)
-                topCells(i).value.evaluated = evaluatedResult
-              case None =>
-                evaluationFailed = true
+    val result: Option[(Cell, Set[Cell])] =
+      parseAndEvaluateSourceValue(name = name, sourceValue = sourceValue).flatMap {
+        case (parsedValue, evaluatedResult) =>
+          val (cell, noLongerReferencedCells) = createOrUpdateCell(
+            existingCell = existingCell,
+            name = name,
+            sourceValue = sourceValue,
+            parsedValue = parsedValue,
+            evaluatedResult = evaluatedResult
+          )
+          if (!hasCircularDeps(cell)) {
+            val topCells: ArraySeq[Cell] = allTopCellsTopologicallySorted(cell)
+            var i                        = 0
+            var evaluationFailed         = false
+            while (i < topCells.size && !evaluationFailed) {
+              topCells(i).value.parsed.evaluate()(cellEvaluator = this) match {
+                case Some(evaluatedResult) =>
+                  topCells(i).value.previousEvaluated = Some(topCells(i).value.evaluated)
+                  topCells(i).value.evaluated = evaluatedResult
+                case None =>
+                  evaluationFailed = true
+              }
+              i += 1
             }
-            i += 1
-          }
-          if (evaluationFailed) {
-            (0 until i).foreach(j => topCells(j).value.evaluated = topCells(j).value.previousEvaluated.get)
-          }
-          (0 until i).foreach { j =>
-            topCells(j).value.previousEvaluated = None
-            topCells(j).value.traversed = false
-          }
-          if (!evaluationFailed) Some(cell -> noLongerReferencedCells) else None
-        } else None
-    }
+            if (evaluationFailed) {
+              (0 until (i - 1)).foreach(j => topCells(j).value.evaluated = topCells(j).value.previousEvaluated.get)
+            }
+            (0 until i).foreach { j =>
+              topCells(j).value.previousEvaluated = None
+              topCells(j).value.traversed = false
+            }
+            if (!evaluationFailed) Some(cell -> noLongerReferencedCells) else None
+          } else None
+      }
     result match {
       case Some((cell, noLongerReferencedCells)) =>
         cell.value.bottomCells.foreach(_.value.topCells += cell)
@@ -193,7 +199,7 @@ class SheetImpl extends Sheet with CellEvaluator {
     def loop(cell2: Cell): Boolean =
       (cell == cell2) || cell2.value.bottomCells.exists(loop)
 
-    loop(cell)
+    cell.value.bottomCells.exists(loop)
   }
 
   // TODO Test

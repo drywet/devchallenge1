@@ -33,7 +33,7 @@ class SheetSpec extends AnyFlatSpec with should.Matchers {
     sheet.getCellValue("a3") shouldEqual None
 
     sheet.putCellValue("a1", "a1") shouldEqual None
-    sheet.getCellValue("a1") shouldEqual Some(("a1", Right(5)))
+    sheet.getCellValue("a1") shouldEqual Some(("5", Right(5)))
     sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(6)))
 
     sheet.putCellValue("a1", "=((123+456*(2+-1))+789)/0.1") shouldEqual Some(Right(13680))
