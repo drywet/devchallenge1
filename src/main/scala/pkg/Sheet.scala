@@ -14,6 +14,7 @@ trait Sheet {
 }
 
 trait CellEvaluator {
+  /** @return None if the cell doesn't exist, Some otherwise */
   def getAndEvaluateCell(name: String): Option[Either[String, Double]]
 }
 
@@ -24,7 +25,7 @@ trait CellEvaluator {
 //   Each cell should store a set of cells it directly depends on, for fast tree traversal. It's specified together with the parsed value
 //   Each cell also stores a set of cells that directly depend on it. It's updated at the end on success after all checks
 // If the expression and bottom cells are ok or the value being stored is a number/string
-//   set cell value
+//   Create the cell or update the existing cell's value
 //   if the cell is updated (not created) then check cells that depend on this cell (top cells)
 //     Depth-traversal: temporary evaluated value is stored to another tempEvaluated field; All traversed top cells are added to a list.
 //       Note: during cell evaluation, tempEvaluated should be used if it is present, and `evaluated` otherwise
@@ -118,23 +119,8 @@ class SheetImpl extends Sheet with CellEvaluator {
       lock.unlockWrite(lockStamp)
   }
 
-  private def getCellOrCreate(name: String, sourceValue: String): Cell =
-    cells.getOrElseUpdate(name, Cell.empty(name, sourceValue))
-
-  /** @return None on error, Some otherwise */
+  /** @return None if the cell doesn't exist, Some otherwise */
   override def getAndEvaluateCell(name: String): Option[Either[String, Double]] =
-    cells.get(name).flatMap(evaluateCell)
-
-  /** @return None on error, Some otherwise */
-  private def evaluateCell(cell: Cell): Option[Either[String, Double]] = {
-    if (cell.beingEvaluated) {
-      None
-    } else {
-      cell.beingEvaluated = true
-      val result = cell.value.flatMap(_.parsed.evaluate()(cellEvaluator = this))
-      cell.beingEvaluated = false
-      result
-    }
-  }
+    cells.get(name).map(_.value.evaluated)
 
 }

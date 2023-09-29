@@ -38,18 +38,9 @@ case class CellValue(
 /** In a Sheet, every cell has only one unique instance, so it's possible to compare cells by reference for better performance, 
  * keeping the default equals/hashCode implementation, hence this class isn't a case class. 
  * @param source Original string value to be parsed as a number/string/expression
- * @param value None value is possible only for cells that are being created.
- *               On success, the value is set to Some, and on failure the cell is removed */
+ * @param value Cell value */
 class Cell(
     val name: String,
     val source: String,
-    var value: Option[CellValue]
+    var value: CellValue
 )
-
-object Cell {
-  def empty(name: String, source: String): Cell = new Cell(
-    name = name,
-    source = source,
-    value = None
-  )
-}
