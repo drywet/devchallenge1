@@ -43,15 +43,13 @@ case class CellValue(
 class Cell(
     val name: String,
     val source: String,
-    var value: Option[CellValue],
-    var beingEvaluated: Boolean // TODO remove this field and replace with reference check against this cell
+    var value: Option[CellValue]
 )
 
 object Cell {
   def empty(name: String, source: String): Cell = new Cell(
     name = name,
     source = source,
-    value = None,
-    beingEvaluated = false
+    value = None
   )
 }
