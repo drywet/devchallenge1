@@ -55,16 +55,12 @@ class SheetImpl extends Sheet with CellEvaluator {
                 s"because this thread acquired a read access lock to all cells"
             )
           } else {
-            val evaluatedResult: Option[Either[String, Double]] = cell.value.parsed match {
-              case Some(parsed) =>
-                parsed match {
-                  case x: CellValueNumber => Some(Right(x.value))
-                  case x: CellValueString => Some(Left(x.value))
-                  case x: CellValueExpr   => x.evaluate()(cellEvaluator = this)
-                }
-              case None => None
-            }
-            cell.value.source -> evaluatedResult
+            val evaluatedResult: Option[Either[String, Double]] = cell.value.flatMap(_.parsed match {
+              case x: CellValueNumber => Some(Right(x.value))
+              case x: CellValueString => Some(Left(x.value))
+              case x: CellValueExpr   => x.evaluate()(cellEvaluator = this)
+            })
+            cell.source -> evaluatedResult
           }
         }
       } finally
@@ -85,7 +81,7 @@ class SheetImpl extends Sheet with CellEvaluator {
     val lockStamp = lock.writeLock()
     try {
       val previousCellValue = cells.get(name).map(_.value)
-      val cell              = getCellOrCreate(name)
+      val cell              = getCellOrCreate(name, sourceValue)
       val result: (Option[CellValueParsed], Option[Either[String, Double]]) =
         if (cell.beingEvaluated) {
           throw new IllegalStateException(
@@ -122,7 +118,8 @@ class SheetImpl extends Sheet with CellEvaluator {
         }
       val (parsedValue, evaluatedResult) = result
       if (evaluatedResult.isDefined) {
-        cell.value = new CellValue(sourceValue, parsedValue)
+        require(parsedValue.isDefined)
+        cell.value = Some(CellValue(parsedValue.get))
       } else {
         previousCellValue match {
           case Some(previousValue) => cell.value = previousValue
@@ -134,8 +131,8 @@ class SheetImpl extends Sheet with CellEvaluator {
       lock.unlockWrite(lockStamp)
   }
 
-  private def getCellOrCreate(name: String): Cell =
-    cells.getOrElseUpdate(name, Cell(name, CellValue.Empty, beingEvaluated = false))
+  private def getCellOrCreate(name: String, sourceValue: String): Cell =
+    cells.getOrElseUpdate(name, Cell.empty(name, sourceValue))
 
   /** @return None on error, Some otherwise */
   override def getAndEvaluateCell(name: String): Option[Either[String, Double]] =
@@ -147,7 +144,7 @@ class SheetImpl extends Sheet with CellEvaluator {
       None
     } else {
       cell.beingEvaluated = true
-      val result = cell.value.parsed.flatMap(_.evaluate()(cellEvaluator = this))
+      val result = cell.value.flatMap(_.parsed.evaluate()(cellEvaluator = this))
       cell.beingEvaluated = false
       result
     }

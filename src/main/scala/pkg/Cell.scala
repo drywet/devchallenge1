@@ -20,15 +20,25 @@ case class CellValueExpr(value: Expr) extends CellValueParsed {
   def evaluate()(implicit cellEvaluator: CellEvaluator): Option[Either[String, Double]] = CalcParser.evaluate(value)
 }
 
+case class CellValue(parsed: CellValueParsed)
+
 /** In a Sheet, every cell has only one unique instance, so it's possible to compare cells by reference for better performance, 
- * keeping the default equals/hashCode implementation, hence this class isn't a case class.
+ * keeping the default equals/hashCode implementation, hence this class isn't a case class. 
  * @param source Original string value to be parsed as a number/string/expression
- * @param parsed None value is possible only for cells that are being created.
+ * @param value None value is possible only for cells that are being created.
  *               On success, the value is set to Some, and on failure the cell is removed */
-class CellValue(val source: String, val parsed: Option[CellValueParsed])
+class Cell(
+    val name: String,
+    val source: String,
+    var value: Option[CellValue],
+    var beingEvaluated: Boolean
+)
 
-object CellValue {
-  val Empty: CellValue = new CellValue("", None)
+object Cell {
+  def empty(name: String, source: String): Cell = new Cell(
+    name = name,
+    source = source,
+    value = None,
+    beingEvaluated = false
+  )
 }
-
-case class Cell(name: String, var value: CellValue, var beingEvaluated: Boolean)
