@@ -28,14 +28,14 @@ case class CellValueExpr(expr: Expr) extends CellValueParsed {
  * @param topCells cells that mention this cell in their expressions
  * @param bottomCells cells this cell mentions in the expression
  * @param evaluated cached evaluated value of [[parsed]] param             
- * @param tempEvaluated Used during bottom-up traversal during cell update/creation, and is cleared afterwards */
+ * @param previousEvaluated Used during bottom-up traversal during cell update/creation, and is cleared afterwards */
 case class CellValue(
     source: String,
     parsed: CellValueParsed,
     topCells: mutable.Set[Cell],
     bottomCells: Set[Cell],
     evaluated: Either[String, Double],
-    var tempEvaluated: Option[Either[String, Double]]
+    var previousEvaluated: Option[Either[String, Double]]
 )
 
 /** In a Sheet, every cell has only one unique instance, so it's possible to compare cells by reference for better performance, 

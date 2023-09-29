@@ -29,11 +29,12 @@ trait CellEvaluator {
 // -- Otherwise, if the cell doesn't exist, create the cell
 // If the expression and bottom cells are ok or the value being stored is a number/string
 //   if the cell is updated (not created) then check cells that depend on this cell (top cells)
-//     Depth-traversal: temporary evaluated value is stored to another tempEvaluated field; All traversed top cells are added to a list.
-//       Note: during cell evaluation, tempEvaluated should be used if it is present, and `evaluated` otherwise
-//     after evaluation:
-//      if ok, for all traversed top cells, copy tempEvaluated to `evaluated`;
-//      in any case - set all traversed tempEvaluated back to None
+//     Traverse top cells of the cell and sort them topologically in a list
+//     Evaluate all cells in that order:
+//       set previousEvaluated=evaluated
+//       set evaluated=evaluate()
+//     If any evaluation fails, restore previous evaluated values for the updated cells
+//     For all cells, set previousEvaluated=None
 // If evaluation or deps checks fail, the cell value is reverted or the cell is removed, and 422 is returned.
 // otherwise, on success, put the cell to the top cells sets of its bottom cells
 
@@ -76,7 +77,7 @@ class SheetImpl extends Sheet with CellEvaluator {
     parseAndEvaluateSourceValue(name, sourceValue).flatMap { case (parsedValue, evaluatedResult) =>
       val cell = createOrUpdateCell(cellOpt, name, sourceValue, parsedValue, evaluatedResult)
       if (!hasCircularDeps(cell)) {
-
+        topCellsTopologicallySorted(cell)
         Some(cell)
       } else None
     }
