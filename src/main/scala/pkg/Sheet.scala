@@ -21,11 +21,11 @@ trait CellEvaluator {
 
 // TODO Don't store values that break other values. This reverse dependency tracking can be combined with the write cache.
 // -- On adding a cell, the expression is evaluated shallowly since all cells store cached evaluated values;
-// If a cell is updated (not created) then cells in the expression (bottom cells) are traversed in depth to make sure there are no circular dependencies.
+// -- If a cell is updated (not created) then cells in the expression (bottom cells) are traversed in depth to make sure there are no circular dependencies.
 //   -- Update the existing cell's value
-//   Circular dependencies are detected by comparing the cell currently traversed vs the cell updated
-//   Each cell should store a set of cells it directly depends on, for fast tree traversal. It's specified together with the parsed value
-//   Each cell also stores a set of cells that directly depend on it. It's updated at the end on success after all checks
+//   -- Circular dependencies are detected by comparing the cell currently traversed vs the cell updated
+//   -- Each cell should store a set of cells it directly depends on, for fast tree traversal. It's specified together with the parsed value
+//   -- Each cell also stores a set of cells that directly depend on it. It's updated at the end on success, after all checks
 // -- Otherwise, if the cell doesn't exist, create the cell
 // If the expression and bottom cells are ok or the value being stored is a number/string
 //   if the cell is updated (not created) then check cells that depend on this cell (top cells)
@@ -73,33 +73,12 @@ class SheetImpl extends Sheet with CellEvaluator {
   private def putCellValue2(name: String, sourceValue: String): Option[Either[String, Double]] = {
     val cellOpt           = cells.get(name)
     val previousCellValue = cellOpt.map(_.value)
-    parseAndEvaluateSourceValue(name, sourceValue).map { case (parsedValue, evaluatedResult) =>
-      val cell = cellOpt match {
-        case Some(cell) =>
-          cell.value = CellValue(
-            source = sourceValue,
-            parsed = parsedValue,
-            topCells = cell.value.topCells,
-            bottomCells = referencedCells(parsedValue),
-            evaluated = evaluatedResult,
-            tempEvaluated = None
-          )
-          cell
-        case None =>
-          val value = CellValue(
-            source = sourceValue,
-            parsed = parsedValue,
-            topCells = mutable.Set(),
-            bottomCells = referencedCells(parsedValue),
-            evaluated = evaluatedResult,
-            tempEvaluated = None
-          )
-          val cell = new Cell(name, value)
-          cells.put(name, cell)
-          cell
-      }
+    parseAndEvaluateSourceValue(name, sourceValue).flatMap { case (parsedValue, evaluatedResult) =>
+      val cell = createOrUpdateCell(cellOpt, name, sourceValue, parsedValue, evaluatedResult)
+      if (!hasCircularDeps(cell)) {
 
-      cell
+        Some(cell)
+      } else None
     }
     // if (evaluatedResult.isDefined) {
     //   require(parsedValue.isDefined)
@@ -124,7 +103,7 @@ class SheetImpl extends Sheet with CellEvaluator {
       val parser  = new CalcParser(formula)
       parser.InputLine.run() match {
         case Success(expr) =>
-          val evaluatedResult = evaluate(expr)(cellEvaluator = this)
+          val evaluatedResult = CalcParser.evaluate(expr)(cellEvaluator = this)
           evaluatedResult.map(evaluatedResult => CellValueExpr(expr) -> evaluatedResult)
         case Failure(e: ParseError) =>
           if (debug) println(s"Cell $name Expression is not valid: ${parser.formatError(e)}")
@@ -141,6 +120,47 @@ class SheetImpl extends Sheet with CellEvaluator {
     } else {
       None
     }
+  }
+
+  private def createOrUpdateCell(
+                                  existingCell: Option[Cell],
+                                  name: String,
+                                  sourceValue: String,
+                                  parsedValue: CellValueParsed,
+                                  evaluatedResult: Either[String, Double]
+                                ) = {
+    existingCell match {
+      case Some(existingCell) =>
+        existingCell.value = CellValue(
+          source = sourceValue,
+          parsed = parsedValue,
+          topCells = existingCell.value.topCells,
+          bottomCells = referencedCells(parsedValue),
+          evaluated = evaluatedResult,
+          tempEvaluated = None
+        )
+        existingCell
+      case None =>
+        val value = CellValue(
+          source = sourceValue,
+          parsed = parsedValue,
+          topCells = mutable.Set(),
+          bottomCells = referencedCells(parsedValue),
+          evaluated = evaluatedResult,
+          tempEvaluated = None
+        )
+        val cell = new Cell(name, value)
+        cells.put(name, cell)
+        cell
+    }
+  }
+
+  private def hasCircularDeps(cell: Cell): Boolean = {
+    def loop(cell2: Cell): Boolean = {
+      (cell == cell2) || cell2.value.bottomCells.exists(loop)
+    }
+
+    loop(cell)
   }
 
   private def referencedCells(parsedValue: CellValueParsed): Set[Cell] =
