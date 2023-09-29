@@ -48,8 +48,7 @@ class SheetImpl extends Sheet with CellEvaluator {
   private val cells: mutable.HashMap[String, Cell] = new mutable.HashMap()
   private val lock: StampedLock                    = new StampedLock()
 
-  /** @return Option[sourceValue, evaluatedResult] - Some if the cell is defined, None otherwise.
-   *         sourceValue: String, evaluatedResult: None or error, Some otherwise */
+  /** @return Option[(sourceValue, evaluatedResult)] - Some if the cell exists, None otherwise */
   def getCellValue(name: String): Option[(String, Either[String, Double])] = {
     require(name.trim.nonEmpty, "Cell name should be non-empty")
     val lockStamp = lock.readLock()
@@ -59,49 +58,54 @@ class SheetImpl extends Sheet with CellEvaluator {
     result
   }
 
-  /** @return evaluatedResult: None or error, Some otherwise */
+  /** @return evaluatedResult: None on error, Some otherwise */
   def putCellValue(name: String, sourceValue: String): Option[Either[String, Double]] = {
     require(name.trim.nonEmpty, "Cell name should be non-empty")
     val lockStamp = lock.writeLock()
     try {
-      val previousCellValue = cells.get(name).map(_.value)
-      val cell              = getCellOrCreate(name, sourceValue)
-      val result: (Option[CellValueParsed], Option[Either[String, Double]]) =
-        if (sourceValue.startsWith("=")) {
-          val formula = normalizeFormula(sourceValue.drop(1))
-          val parser  = new CalcParser(formula)
-          parser.InputLine.run() match {
-            case Success(expr) =>
-              val evaluatedResult = evaluate(expr)(cellEvaluator = this)
-              Some(CellValueExpr(expr)) -> evaluatedResult
-            case Failure(e: ParseError) =>
-              if (debug) println("Expression is not valid: " + parser.formatError(e))
-              None -> None
-            case Failure(e) =>
-              if (debug) println("Unexpected error during parsing run: " + e)
-              None -> None
-          }
-        } else if (sourceValue.toDoubleOption.isDefined) {
-          val number = sourceValue.toDouble
-          Some(CellValueNumber(number)) -> Some(Right(number))
-        } else if (sourceValue.nonEmpty) {
-          (Some(CellValueString(sourceValue)), Some(Left(sourceValue)))
-        } else {
-          None -> None
-        }
-      val (parsedValue, evaluatedResult) = result
-      if (evaluatedResult.isDefined) {
-        require(parsedValue.isDefined)
-        cell.value = Some(CellValue(parsedValue.get))
-      } else {
-        previousCellValue match {
-          case Some(previousValue) => cell.value = previousValue
-          case None                => cells.remove(cell.name)
-        }
-      }
-      evaluatedResult
+      putCellValue2(name, sourceValue)
     } finally
       lock.unlockWrite(lockStamp)
+  }
+
+  /** @return evaluatedResult: None on error, Some otherwise */
+  private def putCellValue2(name: String, sourceValue: String): Option[Either[String, Double]] = {
+    val previousCellValue = cells.get(name).map(_.value)
+    val cell = getCellOrCreate(name, sourceValue)
+    val result: (Option[CellValueParsed], Option[Either[String, Double]]) =
+      if (sourceValue.startsWith("=")) {
+        val formula = normalizeFormula(sourceValue.drop(1))
+        val parser = new CalcParser(formula)
+        parser.InputLine.run() match {
+          case Success(expr) =>
+            val evaluatedResult = evaluate(expr)(cellEvaluator = this)
+            Some(CellValueExpr(expr)) -> evaluatedResult
+          case Failure(e: ParseError) =>
+            if (debug) println("Expression is not valid: " + parser.formatError(e))
+            None -> None
+          case Failure(e) =>
+            if (debug) println("Unexpected error during parsing run: " + e)
+            None -> None
+        }
+      } else if (sourceValue.toDoubleOption.isDefined) {
+        val number = sourceValue.toDouble
+        Some(CellValueNumber(number)) -> Some(Right(number))
+      } else if (sourceValue.nonEmpty) {
+        (Some(CellValueString(sourceValue)), Some(Left(sourceValue)))
+      } else {
+        None -> None
+      }
+    val (parsedValue, evaluatedResult) = result
+    if (evaluatedResult.isDefined) {
+      require(parsedValue.isDefined)
+      cell.value = Some(CellValue(parsedValue.get))
+    } else {
+      previousCellValue match {
+        case Some(previousValue) => cell.value = previousValue
+        case None => cells.remove(cell.name)
+      }
+    }
+    evaluatedResult
   }
 
   /** @return None if the cell doesn't exist, Some otherwise */
