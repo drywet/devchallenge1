@@ -19,30 +19,10 @@ trait CellEvaluator {
   def getEvaluatedCellValue(name: String): Option[Either[String, Double]]
 }
 
-// TODO Don't store values that break other values. This reverse dependency tracking can be combined with the write cache.
-// -- On adding a cell, the expression is evaluated shallowly since all cells store cached evaluated values;
-// -- If a cell is updated (not created) then cells in the expression (bottom cells) are traversed in depth to make sure there are no circular dependencies.
-//   -- Update the existing cell's value. Store a list of bottom cells no longer referenced in the cell expression
-//   -- Circular dependencies are detected by comparing the cell currently traversed vs the cell updated
-//   -- Each cell should store a set of cells it directly depends on, for fast tree traversal. It's specified together with the parsed value
-//   -- Each cell also stores a set of cells that directly depend on it. It's updated at the end on success, after all checks
-// -- Otherwise, if the cell doesn't exist, create the cell
-// If the expression and bottom cells are ok or the value being stored is a number/string
-//   if the cell is updated (not created) then check cells that depend on this cell (top cells)
-//     -- Traverse top cells of the cell and sort them topologically in a list
-//     -- Evaluate all cells in that order:
-//       -- set previousEvaluated=evaluated
-//       -- set evaluated=evaluate()
-//     -- If any evaluation fails, restore previous evaluated values for the updated cells
-//     -- Set previousEvaluated=None and traversed=false for all evaluated cells
-// -- If evaluation or deps checks fail, the cell value is reverted or the cell is removed, and 422 is returned.
-// -- otherwise, on success, put the cell to the top cells sets of its bottom cells and remove the cell from the top cells sets of no longer referenced cells
-
 // TODO Increase stack size and add a tests for long deps chains updates at the bottom and at the top
 
-// TODO tree with propagation on writes:
-//   write: 1 + tree propagation (log n in the average case, n in the worst case)
-//   read: 1
+// TODO Add HTTP API and choose the optimal number of worker threads
+
 class SheetImpl extends Sheet with CellEvaluator {
 
   private val debug: Boolean = false
@@ -60,18 +40,41 @@ class SheetImpl extends Sheet with CellEvaluator {
     result
   }
 
-  /** @return evaluatedResult: None on error, Some otherwise */
+  /** Performance characteristics:
+   * write complexity: tree traversals for re-evaluation are log(n) on average and n in the worst case
+   * read complexity: 1
+   * 
+   * Algorithm description:
+   * On adding a cell, the expression is evaluated shallowly since all cells store cached evaluated values
+   * If a cell is updated (not created) then cells in the expression (bottom cells) are traversed in depth to make sure there are no circular dependencies.
+   *   Update the existing cell's value. Store a list of bottom cells no longer referenced in the cell expression
+   *   Circular dependencies are detected by comparing the cell currently traversed vs the cell updated
+   *   Each cell should store a set of cells it directly depends on, for fast tree traversal. It's specified together with the parsed value
+   *   Each cell also stores a set of cells that directly depend on it. It's updated at the end on success, after all checks
+   * Otherwise, if the cell doesn't exist, create the cell
+   * If the expression and bottom cells are ok or the value being stored is a number/string
+   *   If the cell is updated (not created) then check cells that depend on this cell (top cells)
+   *     Traverse top cells of the cell and sort them topologically in a list
+   *     Evaluate all cells in that order:
+   *       Set previousEvaluated=evaluated
+   *       Set evaluated=evaluate()
+   *     If any evaluation fails, restore previous evaluated values for the updated cells
+   *     Set previousEvaluated=None and traversed=false for all evaluated cells
+   * If evaluation or deps checks fail, the cell value is reverted or the cell is removed;
+   * otherwise, on success, put the cell to the top cells sets of its bottom cells and remove the cell from the top cells sets of no longer referenced cells 
+   *
+   * @return evaluatedResult: None on error, Some otherwise */
   def putCellValue(name: String, sourceValue: String): Option[Either[String, Double]] = {
     require(name.trim.nonEmpty, "Cell name should be non-empty")
     val lockStamp = lock.writeLock()
     try
-      putCellValue2(name = name, sourceValue = sourceValue)
+      putCellValueImpl(name = name, sourceValue = sourceValue)
     finally
       lock.unlockWrite(lockStamp)
   }
 
   /** @return evaluatedResult: None on error, Some otherwise */
-  private def putCellValue2(name: String, sourceValue: String): Option[Either[String, Double]] = {
+  private def putCellValueImpl(name: String, sourceValue: String): Option[Either[String, Double]] = {
     val existingCell      = cells.get(name)
     val previousCellValue = existingCell.map(_.value)
     val result: Option[(Cell, Set[Cell])] =

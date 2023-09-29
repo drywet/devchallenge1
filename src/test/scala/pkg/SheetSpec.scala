@@ -32,6 +32,7 @@ class SheetSpec extends AnyFlatSpec with should.Matchers {
     sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(6)))
     sheet.getCellValue("a3") shouldEqual None
 
+    // Can't change a1 value type because a2==a1+1
     sheet.putCellValue("a1", "a1") shouldEqual None
     sheet.getCellValue("a1") shouldEqual Some(("5", Right(5)))
     sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(6)))
@@ -44,7 +45,6 @@ class SheetSpec extends AnyFlatSpec with should.Matchers {
 
     sheet.putCellValue("a2", "a2") shouldEqual Some(Left("a2"))
     sheet.getCellValue("a2") shouldEqual Some("a2", Left("a2"))
-
     sheet.putCellValue("a1", "=a2") shouldEqual Some(Left("a2"))
     sheet.getCellValue("a1") shouldEqual Some("=a2", Left("a2"))
 
