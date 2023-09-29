@@ -18,16 +18,19 @@ case class CellValueString(value: String) extends CellValueParsed {
   def evaluate()(implicit cellEvaluator: CellEvaluator): Option[Left[String, Double]] = Some(Left(value))
 }
 
-case class CellValueExpr(value: Expr) extends CellValueParsed {
-  def evaluate()(implicit cellEvaluator: CellEvaluator): Option[Either[String, Double]] = CalcParser.evaluate(value)
+case class CellValueExpr(expr: Expr) extends CellValueParsed {
+  def evaluate()(implicit cellEvaluator: CellEvaluator): Option[Either[String, Double]] = CalcParser.evaluate(expr)
 }
 
-/** @param parsed parsed value: number/string/expression 
+/**
+ * @param source Original string value to be parsed as a number/string/expression
+ * @param parsed parsed value: number/string/expression 
  * @param topCells cells that mention this cell in their expressions
  * @param bottomCells cells this cell mentions in the expression
  * @param evaluated cached evaluated value of [[parsed]] param             
  * @param tempEvaluated Used during bottom-up traversal during cell update/creation, and is cleared afterwards */
 case class CellValue(
+    source: String,
     parsed: CellValueParsed,
     topCells: mutable.Set[Cell],
     bottomCells: Set[Cell],
@@ -37,10 +40,8 @@ case class CellValue(
 
 /** In a Sheet, every cell has only one unique instance, so it's possible to compare cells by reference for better performance, 
  * keeping the default equals/hashCode implementation, hence this class isn't a case class. 
- * @param source Original string value to be parsed as a number/string/expression
  * @param value Cell value */
 class Cell(
     val name: String,
-    val source: String,
     var value: CellValue
 )

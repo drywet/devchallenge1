@@ -2,6 +2,8 @@ package pkg
 
 import org.parboiled2._
 
+import scala.collection.mutable
+
 /** Based on <a href="https://github.com/sirthias/parboiled2/blob/master/examples/src/main/scala/org/parboiled2/examples/Calculator2.scala">Calculator2.scala</a>
  * Extended with support for float numbers and variables */
 object CalcParser {
@@ -26,6 +28,22 @@ object CalcParser {
       b <- evaluate(b).flatMap(_.toOption)
     } yield op(a, b)
     res.map(Right(_))
+  }
+
+  def referencedVariables(expr: Expr): Set[String] = {
+    val variables: mutable.Builder[String, Set[String]] = Set.newBuilder[String]
+
+    def loop(expr: Expr): Unit = expr match {
+      case NumberValue(_)       =>
+      case VariableValue(name)  => variables += name
+      case Addition(a, b)       => loop(a); loop(b)
+      case Subtraction(a, b)    => loop(a); loop(b)
+      case Multiplication(a, b) => loop(a); loop(b)
+      case Division(a, b)       => loop(a); loop(b)
+    }
+
+    loop(expr)
+    variables.result()
   }
 
   // Abstract syntax tree model
