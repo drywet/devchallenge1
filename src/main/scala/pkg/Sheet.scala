@@ -14,6 +14,7 @@ trait Sheet {
 }
 
 trait CellEvaluator {
+
   /** @return None if the cell doesn't exist, Some otherwise */
   def getAndEvaluateCell(name: String): Option[Either[String, Double]]
 }
@@ -52,26 +53,10 @@ class SheetImpl extends Sheet with CellEvaluator {
   def getCellValue(name: String): Option[(String, Either[String, Double])] = {
     require(name.trim.nonEmpty, "Cell name should be non-empty")
     val lockStamp = lock.readLock()
-    val result: Option[(String, Option[Either[String, Double]])] =
-      try {
-        cells.get(name).map { cell =>
-          val evaluatedResult: Option[Either[String, Double]] = cell.value.flatMap(_.parsed match {
-            case x: CellValueNumber => Some(Right(x.value))
-            case x: CellValueString => Some(Left(x.value))
-            case x: CellValueExpr   => x.evaluate()(cellEvaluator = this)
-          })
-          cell.source -> evaluatedResult
-        }
-      } finally
-        lock.unlockRead(lockStamp)
-    result match {
-      case Some((_, None)) =>
-        throw new IllegalStateException(s"Cell '$name' evaluation failed")
-      case Some((source, Some(evaluatedResult))) =>
-        Some(source, evaluatedResult)
-      case None =>
-        None
-    }
+    val result: Option[(String, Either[String, Double])] =
+      cells.get(name).map(cell => cell.source -> cell.value.evaluated)
+    lock.unlockRead(lockStamp)
+    result
   }
 
   /** @return evaluatedResult: None or error, Some otherwise */
