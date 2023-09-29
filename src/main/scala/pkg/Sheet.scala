@@ -22,6 +22,9 @@ trait CellEvaluator {
 // TODO Increase stack size and add a tests for long deps chains updates at the bottom and at the top
 
 // TODO Add HTTP API and choose the optimal number of worker threads
+//  Docker
+
+// TODO Readme
 
 class SheetImpl extends Sheet with CellEvaluator {
 
