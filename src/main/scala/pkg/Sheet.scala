@@ -20,10 +20,8 @@ trait CellEvaluator {
 }
 
 // TODO Optimization:
-//  -- check if cell is updated (not created) and the sourceValue is actually different from the previous before checking bottomCells and topCells
-//  on update, only newly added bottomCells have to be traversed
-//  on update, only traverse topDeps if the evaluated result is different from the previously stored one
-//  replace sets with ArraySeq where possible
+//  replace PEG/AST parser with RPN?
+//  replace sets with ArraySeq where possible?
 
 // TODO Increase stack size and add tests for long deps chains updates at the bottom and at the top
 
@@ -86,26 +84,43 @@ class SheetImpl extends Sheet with CellEvaluator {
   private def putCellValueImpl(name: String, sourceValue: String): Option[Either[String, Double]] = {
     val existingCell      = cells.get(name)
     val previousCellValue = existingCell.map(_.value)
-    val result: Option[(Cell, Set[Cell])] =
-      parseAndEvaluateSourceValue(name = name, sourceValue = sourceValue).flatMap {
-        case (parsedValue, evaluatedResult) =>
-          val (cell, noLongerReferencedCells, sourceValueChanged) = createOrUpdateCell(
-            existingCell = existingCell,
-            name = name,
-            sourceValue = sourceValue,
-            parsedValue = parsedValue,
-            evaluatedResult = evaluatedResult
-          )
-          if (existingCell.isEmpty || sourceValueChanged && !hasCircularDeps(cell)) {
-            if (existingCell.isEmpty || sourceValueChanged && reevaluateTopCells(cell))
-              Some(cell -> noLongerReferencedCells)
-            else None
-          } else None
+    val result: Option[(Cell, Set[Cell], Set[Cell])] =
+      // Optimisation: early check
+      if (previousCellValue.forall(_.source != sourceValue)) {
+        // Previous source value changed or doesn't exist
+        parseAndEvaluateSourceValue(name = name, sourceValue = sourceValue).flatMap {
+          case (parsedValue, evaluatedResult) =>
+            val cell = createOrUpdateCell(
+              existingCell = existingCell,
+              name = name,
+              sourceValue = sourceValue,
+              parsedValue = parsedValue,
+              evaluatedResult = evaluatedResult
+            )
+
+            // Optimisation: early checks
+            previousCellValue match {
+              case Some(previousCellValue) =>
+                val newlyReferencedCells = cell.value.bottomCells -- previousCellValue.bottomCells
+                if (!hasCircularDeps(cell, newlyReferencedCells)) {
+                  val evaluatedResultChanged = previousCellValue.evaluated != evaluatedResult
+                  if (!evaluatedResultChanged || reevaluateTopCells(cell)) {
+                    val noLongerReferencedCells = previousCellValue.bottomCells -- cell.value.bottomCells
+                    Some((cell, noLongerReferencedCells, newlyReferencedCells))
+                  } else None
+                } else None
+              case None =>
+                Some((cell, Set.empty[Cell], cell.value.bottomCells))
+            }
+        }
+      } else {
+        // Previous source value exists, but didn't change
+        Some((existingCell.get, Set.empty, Set.empty))
       }
     result match {
-      case Some((cell, noLongerReferencedCells)) =>
-        cell.value.bottomCells.foreach(_.value.topCells += cell)
+      case Some((cell, noLongerReferencedCells, newlyReferencedCells)) =>
         noLongerReferencedCells.foreach(_.value.topCells -= cell)
+        newlyReferencedCells.foreach(_.value.topCells += cell)
         Some(cell.value.evaluated)
       case None =>
         existingCell match {
@@ -145,19 +160,16 @@ class SheetImpl extends Sheet with CellEvaluator {
     }
   }
 
-  /** @return (cell, no longer referenced cells, sourceValueChanged) */
   private def createOrUpdateCell(
       existingCell: Option[Cell],
       name: String,
       sourceValue: String,
       parsedValue: CellValueParsed,
       evaluatedResult: Either[String, Double]
-  ): (Cell, Set[Cell], Boolean) = {
+  ): Cell = {
     existingCell match {
       case Some(existingCell) =>
-        val sourceValueChanged      = existingCell.value.source != sourceValue
-        val bottomCells             = referencedCells(parsedValue)
-        val noLongerReferencedCells = existingCell.value.bottomCells -- bottomCells
+        val bottomCells = referencedCells(parsedValue)
         existingCell.value = CellValue(
           source = sourceValue,
           parsed = parsedValue,
@@ -167,21 +179,21 @@ class SheetImpl extends Sheet with CellEvaluator {
           previousEvaluated = None,
           traversed = false
         )
-        (existingCell, noLongerReferencedCells, sourceValueChanged)
+        existingCell
       case None =>
-        val sourceValueChanged = true
+        val bottomCells = referencedCells(parsedValue)
         val value = CellValue(
           source = sourceValue,
           parsed = parsedValue,
           topCells = mutable.Set(),
-          bottomCells = referencedCells(parsedValue),
+          bottomCells = bottomCells,
           evaluated = evaluatedResult,
           previousEvaluated = None,
           traversed = false
         )
         val cell = new Cell(name, value)
         cells.put(name, cell)
-        (cell, Set.empty, sourceValueChanged)
+        cell
     }
   }
 
@@ -191,11 +203,11 @@ class SheetImpl extends Sheet with CellEvaluator {
       case _                   => Set.empty
     }
 
-  private def hasCircularDeps(cell: Cell): Boolean = {
+  private def hasCircularDeps(cell: Cell, newlyReferencedCells: Set[Cell]): Boolean = {
     def loop(cell2: Cell): Boolean =
       (cell == cell2) || cell2.value.bottomCells.exists(loop)
 
-    cell.value.bottomCells.exists(loop)
+    newlyReferencedCells.exists(loop)
   }
 
   /** @return true on success, false otherwise */
@@ -220,7 +232,6 @@ class SheetImpl extends Sheet with CellEvaluator {
     !evaluationFailed
   }
 
-  // TODO Test
   /** @return All top cells sorted such that no cell mentions any of subsequent cells in its topCells set */
   def allTopCellsTopologicallySorted(cell: Cell): ArraySeq[Cell] = {
     val sorted: mutable.Builder[Cell, ArraySeq[Cell]] = ArraySeq.newBuilder
