@@ -20,7 +20,7 @@ trait CellEvaluator {
 }
 
 // TODO Optimization:
-//  check if cell is updated (not created) and the sourceValue is actually different from the previous before checking bottomCells and topCells
+//  -- check if cell is updated (not created) and the sourceValue is actually different from the previous before checking bottomCells and topCells
 //  on update, only newly added bottomCells have to be traversed
 //  on update, only traverse topDeps if the evaluated result is different from the previously stored one
 //  replace sets with ArraySeq where possible
@@ -89,15 +89,17 @@ class SheetImpl extends Sheet with CellEvaluator {
     val result: Option[(Cell, Set[Cell])] =
       parseAndEvaluateSourceValue(name = name, sourceValue = sourceValue).flatMap {
         case (parsedValue, evaluatedResult) =>
-          val (cell, noLongerReferencedCells) = createOrUpdateCell(
+          val (cell, noLongerReferencedCells, sourceValueChanged) = createOrUpdateCell(
             existingCell = existingCell,
             name = name,
             sourceValue = sourceValue,
             parsedValue = parsedValue,
             evaluatedResult = evaluatedResult
           )
-          if (!hasCircularDeps(cell)) {
-            if (reevaluateTopCells(cell)) Some(cell -> noLongerReferencedCells) else None
+          if (existingCell.isEmpty || sourceValueChanged && !hasCircularDeps(cell)) {
+            if (existingCell.isEmpty || sourceValueChanged && reevaluateTopCells(cell))
+              Some(cell -> noLongerReferencedCells)
+            else None
           } else None
       }
     result match {
@@ -143,16 +145,17 @@ class SheetImpl extends Sheet with CellEvaluator {
     }
   }
 
-  /** @return (cell, no longer referenced cells) */
+  /** @return (cell, no longer referenced cells, sourceValueChanged) */
   private def createOrUpdateCell(
       existingCell: Option[Cell],
       name: String,
       sourceValue: String,
       parsedValue: CellValueParsed,
       evaluatedResult: Either[String, Double]
-  ): (Cell, Set[Cell]) = {
+  ): (Cell, Set[Cell], Boolean) = {
     existingCell match {
       case Some(existingCell) =>
+        val sourceValueChanged      = existingCell.value.source != sourceValue
         val bottomCells             = referencedCells(parsedValue)
         val noLongerReferencedCells = existingCell.value.bottomCells -- bottomCells
         existingCell.value = CellValue(
@@ -164,8 +167,9 @@ class SheetImpl extends Sheet with CellEvaluator {
           previousEvaluated = None,
           traversed = false
         )
-        existingCell -> noLongerReferencedCells
+        (existingCell, noLongerReferencedCells, sourceValueChanged)
       case None =>
+        val sourceValueChanged = true
         val value = CellValue(
           source = sourceValue,
           parsed = parsedValue,
@@ -177,7 +181,7 @@ class SheetImpl extends Sheet with CellEvaluator {
         )
         val cell = new Cell(name, value)
         cells.put(name, cell)
-        cell -> Set.empty
+        (cell, Set.empty, sourceValueChanged)
     }
   }
 
