@@ -4,11 +4,22 @@ import scala.util.matching.Regex
 
 object StringUtils {
 
-  val whitespaceRegex: Regex = """\s""".r
-  // val tokenizerRegex: Regex  = """\b|(?=[+\-*/()])""".r
+  private val whitespaceRegex: Regex = """\s+""".r
+  private val operators              = Set('+', '-', '*', '/', '(', ')')
 
-  def normalizeFormula(expr: String): String = whitespaceRegex.replaceAllIn(expr, "").toLowerCase
-
-  // def tokenize(expr: String): Array[String] = tokenizerRegex.split(expr)
+  /** Remove whitespace making sure no adjacent numbers or variables would join together */
+  def normalizeFormula(expr: String): Option[String] = {
+    // Minimize whitespace
+    val a = whitespaceRegex.replaceAllIn(expr, " ").trim
+    // Either side of whitespace should be an operator
+    (1 until (a.length - 1)).foreach { i =>
+      if (a(i) == ' ') {
+        if (!(operators(a(i - 1)) || operators(a(i + 1))))
+          return None
+      }
+    }
+    // Remove whitespace
+    Some(whitespaceRegex.replaceAllIn(a, ""))
+  }
 
 }

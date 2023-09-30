@@ -1,5 +1,6 @@
 package pkg
 
+import org.parboiled2.CharPredicate.Digit
 import org.parboiled2._
 
 import scala.collection.mutable
@@ -8,13 +9,32 @@ import scala.collection.mutable
  * Extended with support for float numbers and variables */
 object CalcParser {
 
+  private val Dot: CharPredicate       = CharPredicate('.')
+  private val E: CharPredicate         = CharPredicate('e', 'E')
+  private val PlusMinus: CharPredicate = CharPredicate('+', '-')
+  // All except digits and arithmetic ops
+  // https://jrgraphix.net/r/Unicode
+  private val AlphaExtended: CharPredicate = CharPredicate(
+    ('\u0000' to '\u0027') ++
+      ('\u002c' to '\u002c') ++
+      ('\u002e' to '\u002e') ++
+      ('\u003a' to '\uffef')
+  )
+  // All except arithmetic ops
+  private val AlphaExtendedNumeric: CharPredicate = CharPredicate(
+    ('\u0000' to '\u0027') ++
+      ('\u002c' to '\u002c') ++
+      ('\u002e' to '\u002e') ++
+      ('\u0030' to '\uffef')
+  )
+
   /** Evaluate a parsed expression
    * @return None on failure, Some otherwise */
   def evaluate(expr: Expr)(implicit cellEvaluator: CellEvaluator): Option[Either[String, Double]] =
     expr match {
       case NumberValue(v)       => v.toDoubleOption.map(Right(_))
       case VariableValue(name)  => cellEvaluator.getEvaluatedCellValue(name)
-      case Addition(a, b)       => numberOp(a, b, _ + _) // TODO make op methods?
+      case Addition(a, b)       => numberOp(a, b, _ + _)
       case Subtraction(a, b)    => numberOp(a, b, _ - _)
       case Multiplication(a, b) => numberOp(a, b, _ * _)
       case Division(a, b)       => numberOp(a, b, _ / _)
@@ -94,21 +114,22 @@ class CalcParser(val input: ParserInput) extends Parser {
 
   private def Number: Rule1[NumberValue] = rule(capture(Float) ~> NumberValue.apply _)
 
+  /** No support for Infinity / -Infinity / NaN */
   private def Float: Rule0 = rule(
-    optional(CharPredicate('+', '-')) ~ FloatDigits ~ optional(FloatExponent)
+    optional(PlusMinus) ~ FloatDigits ~ optional(FloatExponent)
   )
 
   private def FloatDigits: Rule0 = rule(
-    (oneOrMore(CharPredicate.Digit) ~ optional(CharPredicate('.')) ~ zeroOrMore(CharPredicate.Digit)) |
-      (CharPredicate('.') ~ oneOrMore(CharPredicate.Digit))
+    (oneOrMore(Digit) ~ optional(Dot) ~ zeroOrMore(Digit)) |
+      (Dot ~ oneOrMore(Digit))
   )
 
   private def FloatExponent: Rule0 = rule(
-    CharPredicate('e') ~ optional(CharPredicate('+', '-')) ~ oneOrMore(CharPredicate.Digit)
+    E ~ optional(PlusMinus) ~ oneOrMore(Digit)
   )
 
   private def Variable: Rule1[VariableValue] =
     // No support for variables starting with a digit, because `1e1` should be a number, not a variable
-    rule(capture(CharPredicate.Alpha ~ zeroOrMore(CharPredicate.AlphaNum)) ~> VariableValue.apply _)
+    rule(capture(AlphaExtended ~ zeroOrMore(AlphaExtendedNumeric)) ~> VariableValue.apply _)
 
 }

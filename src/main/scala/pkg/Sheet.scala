@@ -9,14 +9,14 @@ import scala.collection.mutable
 import scala.util.{Failure, Success}
 
 trait Sheet {
-  def getCellValue(name: String): Option[(String, Either[String, Double])]
-  def putCellValue(name: String, sourceValue: String): Option[Either[String, Double]]
+  def getCellValue(id: String): Option[(String, Either[String, Double])]
+  def putCellValue(id: String, sourceValue: String): Option[Either[String, Double]]
 }
 
 trait CellEvaluator {
 
   /** @return None if the cell doesn't exist, Some otherwise */
-  def getEvaluatedCellValue(name: String): Option[Either[String, Double]]
+  def getEvaluatedCellValue(id: String): Option[Either[String, Double]]
 }
 
 // TODO Optimization:
@@ -30,7 +30,7 @@ trait CellEvaluator {
 
 // TODO Readme
 
-class SheetImpl extends Sheet with CellEvaluator {
+class SheetImpl(val sheetId: String) extends Sheet with CellEvaluator {
 
   private val debug: Boolean = false
 
@@ -38,11 +38,11 @@ class SheetImpl extends Sheet with CellEvaluator {
   private val lock: StampedLock                    = new StampedLock()
 
   /** @return Option[(sourceValue, evaluatedResult)] - Some if the cell exists, None otherwise */
-  def getCellValue(name: String): Option[(String, Either[String, Double])] = {
-    require(name.trim.nonEmpty, "Cell name should be non-empty")
+  def getCellValue(id: String): Option[(String, Either[String, Double])] = {
+    require(id.nonEmpty, "Cell id should be non-empty")
     val lockStamp = lock.readLock()
     val result: Option[(String, Either[String, Double])] =
-      cells.get(name).map(cell => cell.value.source -> cell.value.evaluated)
+      cells.get(id).map(cell => cell.value.source -> cell.value.evaluated)
     lock.unlockRead(lockStamp)
     result
   }
@@ -71,47 +71,46 @@ class SheetImpl extends Sheet with CellEvaluator {
    * otherwise, on success, put the cell to the top cells sets of its bottom cells and remove the cell from the top cells sets of no longer referenced cells 
    *
    * @return evaluatedResult: None on error, Some otherwise */
-  def putCellValue(name: String, sourceValue: String): Option[Either[String, Double]] = {
-    require(name.trim.nonEmpty, "Cell name should be non-empty")
+  def putCellValue(id: String, sourceValue: String): Option[Either[String, Double]] = {
+    require(id.nonEmpty, "Cell id should be non-empty")
     val lockStamp = lock.writeLock()
     try
-      putCellValueImpl(name = name, sourceValue = sourceValue)
+      putCellValueImpl(id = id, sourceValue = sourceValue)
     finally
       lock.unlockWrite(lockStamp)
   }
 
   /** @return evaluatedResult: None on error, Some otherwise */
-  private def putCellValueImpl(name: String, sourceValue: String): Option[Either[String, Double]] = {
-    val existingCell      = cells.get(name)
+  private def putCellValueImpl(id: String, sourceValue: String): Option[Either[String, Double]] = {
+    val existingCell      = cells.get(id)
     val previousCellValue = existingCell.map(_.value)
     val result: Option[(Cell, Set[Cell], Set[Cell])] =
       // Optimisation: early check
       if (previousCellValue.forall(_.source != sourceValue)) {
         // Previous source value changed or doesn't exist
-        parseAndEvaluateSourceValue(name = name, sourceValue = sourceValue).flatMap {
-          case (parsedValue, evaluatedResult) =>
-            val cell = createOrUpdateCell(
-              existingCell = existingCell,
-              name = name,
-              sourceValue = sourceValue,
-              parsedValue = parsedValue,
-              evaluatedResult = evaluatedResult
-            )
+        parseAndEvaluateSourceValue(id = id, sourceValue = sourceValue).flatMap { case (parsedValue, evaluatedResult) =>
+          val cell = createOrUpdateCell(
+            existingCell = existingCell,
+            id = id,
+            sourceValue = sourceValue,
+            parsedValue = parsedValue,
+            evaluatedResult = evaluatedResult
+          )
 
-            // Optimisation: early checks
-            previousCellValue match {
-              case Some(previousCellValue) =>
-                val newlyReferencedCells = cell.value.bottomCells -- previousCellValue.bottomCells
-                if (!hasCircularDeps(cell, newlyReferencedCells)) {
-                  val evaluatedResultChanged = previousCellValue.evaluated != evaluatedResult
-                  if (!evaluatedResultChanged || reevaluateTopCells(cell)) {
-                    val noLongerReferencedCells = previousCellValue.bottomCells -- cell.value.bottomCells
-                    Some((cell, noLongerReferencedCells, newlyReferencedCells))
-                  } else None
+          // Optimisation: early checks
+          previousCellValue match {
+            case Some(previousCellValue) =>
+              val newlyReferencedCells = cell.value.bottomCells -- previousCellValue.bottomCells
+              if (!hasCircularDeps(cell, newlyReferencedCells)) {
+                val evaluatedResultChanged = previousCellValue.evaluated != evaluatedResult
+                if (!evaluatedResultChanged || reevaluateTopCells(cell)) {
+                  val noLongerReferencedCells = previousCellValue.bottomCells -- cell.value.bottomCells
+                  Some((cell, noLongerReferencedCells, newlyReferencedCells))
                 } else None
-              case None =>
-                Some((cell, Set.empty[Cell], cell.value.bottomCells))
-            }
+              } else None
+            case None =>
+              Some((cell, Set.empty[Cell], cell.value.bottomCells))
+          }
         }
       } else {
         // Previous source value exists, but didn't change
@@ -125,7 +124,7 @@ class SheetImpl extends Sheet with CellEvaluator {
       case None =>
         existingCell match {
           case Some(existingCell) => existingCell.value = previousCellValue.get
-          case None               => cells.remove(name)
+          case None               => cells.remove(id)
         }
         None
     }
@@ -133,22 +132,23 @@ class SheetImpl extends Sheet with CellEvaluator {
 
   /** @return Option[(parsedValue, evaluatedResult)] */
   private def parseAndEvaluateSourceValue(
-      name: String,
+      id: String,
       sourceValue: String
   ): Option[(CellValueParsed, Either[String, Double])] = {
     if (sourceValue.startsWith("=")) {
-      val formula = normalizeFormula(sourceValue.drop(1))
-      val parser  = new CalcParser(formula)
-      parser.InputLine.run() match {
-        case Success(expr) =>
-          val evaluatedResult = CalcParser.evaluate(expr)(cellEvaluator = this)
-          evaluatedResult.map(evaluatedResult => CellValueExpr(expr) -> evaluatedResult)
-        case Failure(e: ParseError) =>
-          if (debug) println(s"Cell $name Expression is not valid: ${parser.formatError(e)}")
-          None
-        case Failure(e) =>
-          if (debug) println(s"Cell $name Unexpected error during parsing run: $e")
-          None
+      normalizeFormula(sourceValue.drop(1)).flatMap { formula =>
+        val parser = new CalcParser(formula)
+        parser.InputLine.run() match {
+          case Success(expr) =>
+            val evaluatedResult = CalcParser.evaluate(expr)(cellEvaluator = this)
+            evaluatedResult.map(evaluatedResult => CellValueExpr(expr) -> evaluatedResult)
+          case Failure(e: ParseError) =>
+            if (debug) println(s"Cell $id Expression is not valid: ${parser.formatError(e)}")
+            None
+          case Failure(e) =>
+            if (debug) println(s"Cell $id Unexpected error during parsing run: $e")
+            None
+        }
       }
     } else if (sourceValue.toDoubleOption.isDefined) {
       val number = sourceValue.toDouble
@@ -162,7 +162,7 @@ class SheetImpl extends Sheet with CellEvaluator {
 
   private def createOrUpdateCell(
       existingCell: Option[Cell],
-      name: String,
+      id: String,
       sourceValue: String,
       parsedValue: CellValueParsed,
       evaluatedResult: Either[String, Double]
@@ -191,8 +191,8 @@ class SheetImpl extends Sheet with CellEvaluator {
           previousEvaluated = None,
           traversed = false
         )
-        val cell = new Cell(name, value)
-        cells.put(name, cell)
+        val cell = new Cell(id, value)
+        cells.put(id, cell)
         cell
     }
   }
@@ -232,8 +232,8 @@ class SheetImpl extends Sheet with CellEvaluator {
     !evaluationFailed
   }
 
-  /** @return All top cells sorted such that no cell mentions any of subsequent cells in its topCells set */
-  def allTopCellsTopologicallySorted(cell: Cell): ArraySeq[Cell] = {
+  /** @return All top cells sorted such that no cell mentions in its topCells set any of the subsequent cells */
+  private[pkg] def allTopCellsTopologicallySorted(cell: Cell): ArraySeq[Cell] = {
     val sorted: mutable.Builder[Cell, ArraySeq[Cell]] = ArraySeq.newBuilder
 
     def loop(cell: Cell): Unit = {
@@ -265,9 +265,10 @@ class SheetImpl extends Sheet with CellEvaluator {
   }
 
   /** @return None if the cell doesn't exist, Some otherwise */
-  override def getEvaluatedCellValue(name: String): Option[Either[String, Double]] =
-    cells.get(name).map(_.value.evaluated)
+  override def getEvaluatedCellValue(id: String): Option[Either[String, Double]] =
+    cells.get(id).map(_.value.evaluated)
 
-  def getCell(name: String): Option[Cell] = cells.get(name)
+  /** For testing */
+  private[pkg] def getCell(id: String): Option[Cell] = cells.get(id)
 
 }

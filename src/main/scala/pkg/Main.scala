@@ -1,52 +1,48 @@
 package pkg
 
 import io.activej.eventloop.Eventloop
-import io.activej.http.HttpMethod.GET
-import io.activej.http.{AsyncHttpServer, HttpRequest, HttpResponse, RoutingServlet}
+import io.activej.http.HttpMethod.{GET, POST}
+import io.activej.http._
+import pkg.DoubleUtils.cellDoubleFormat
+
+// TODO http service + docker-compose + load test with k6
 
 object Main {
 
-  // TODO http service + docker-compose + load test with k6
+  val Error         = "ERROR"
+  private val debug = false
+
+  private val service = new Service()
+
+  private val postCell: AsyncServlet = { request: HttpRequest =>
+    // TODO Is this a worker thread or an IO thread?
+    val sheetId = request.getPathParameter("sheet_id")
+    val cellId  = request.getPathParameter("cell_id")
+    // TODO Parse json
+    val sourceValue = request.getPostParameter("value")
+    try {
+      service.putCell(sheetId, cellId, sourceValue) match {
+        case Some(Right(value)) =>
+          val valueStr = cellDoubleFormat(value)
+          // TODO Escape json strings
+          HttpResponse.ok201.withJson(s"""{"value": "$sourceValue", "result": "$valueStr"}""")
+        case Some(Left(value)) =>
+          // TODO Escape json strings
+          HttpResponse.ok201.withJson(s"""{"value": "$sourceValue", "result": "$value"}""")
+        case None =>
+          HttpResponse.ofCode(422).withJson(s"""{"value": "$sourceValue", "result": "$Error"}""")
+      }
+    } catch {
+      case e: Throwable =>
+        if (debug) println(s"Exception: $e")
+        HttpResponse.ofCode(422).withJson(s"""{"value": "$sourceValue", "result": "$Error"}""")
+    }
+  }
 
   private val servlet = RoutingServlet.create
-    .map(
-      GET,
-      "/",
-      (request: HttpRequest) =>
-        HttpResponse.ok200.withHtml(
-          "<h1>Go to some pages</h1>" + "<a href=\"/path1\"> Path 1 </a><br>" + "<a href=\"/path2\"> Path 2 </a><br>" + "<a href=\"/user/0\"> Data for user with ID 0 </a><br>" + "<br>" + "<a href=\"/path3\"> Non existent </a>"
-        )
-    )
-    .map(
-      GET,
-      "/path1",
-      (request: HttpRequest) =>
-        HttpResponse.ok200.withHtml("<h1>Hello from the first path!</h1>" + "<a href=\"/\">Go home</a>")
-    )
-    .map(
-      GET,
-      "/path2",
-      (request: HttpRequest) =>
-        HttpResponse.ok200.withHtml("<h1>Hello from the second path!</h1>" + "<a href=\"/\">Go home</a>")
-    )
-    .map(
-      GET,
-      "/user/:user_id",
-      (request: HttpRequest) => {
-        val userId = request.getPathParameter("user_id")
-        HttpResponse.ok200.withHtml(
-          "<h1>You have requested data for user with ID: " + userId + "</h1>" + "<h3>Try changing URL after <i>'.../user/'</i> to get data for users with different IDs</h3>"
-        )
-
-      }
-    )
-    .map(
-      "/*",
-      (request: HttpRequest) =>
-        HttpResponse
-          .ofCode(404)
-          .withHtml("<h1>404</h1><p>Path '" + request.getRelativePath + "' not found</p>" + "<a href=\"/\">Go home</a>")
-    )
+    .map(GET, "/", (_: HttpRequest) => HttpResponse.ok200.withJson("""{"status": "ok"}"""))
+    .map(POST, "/api/v1/:sheet_id/:cell_id", postCell)
+    .map("/*", (_: HttpRequest) => HttpResponse.notFound404().withJson("""{"status": "error", "error": "not_found"}"""))
 
   def main(args: Array[String]): Unit = {
     val eventloop = Eventloop.create()
