@@ -28,7 +28,7 @@ trait CellEvaluator {
 // TODO Add HTTP API and choose the optimal number of worker threads
 //  Docker
 
-// TODO Readme
+// TODO Readme, document running tests as well
 
 class SheetImpl(val sheetId: String) extends Sheet with CellEvaluator {
 

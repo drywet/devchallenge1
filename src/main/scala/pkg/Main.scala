@@ -6,6 +6,8 @@ import io.activej.http._
 import pkg.DoubleUtils.cellDoubleFormat
 
 // TODO http service + docker-compose + load test with k6
+// TODO empty cell is ok value if upserted and can be coerced to 0
+//  just spaces aren't coerced to numbers
 
 object Main {
 
