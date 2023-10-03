@@ -136,17 +136,21 @@ class SheetSpec extends AnyFlatSpec with should.Matchers {
   it should "check a long formula chain" in {
     val sheet: SheetImpl = new SheetImpl(sheet1)
     sheet.putCellValue("a1", "1") shouldEqual Some(Right(1))
-    val bottomN = 1e6.toInt
+    val n = 1e6.toInt
     time1("Create a long formula chain")(
-      (2 to bottomN).foreach(i => sheet.putCellValue(s"a$i", s"=a${i - 1}+1") shouldEqual Some(Right(i)))
-    )
-    time1("Update the bottom value")(
-      sheet.putCellValue(s"a$bottomN", s"=a${bottomN - 1}+2") shouldEqual Some(Right(bottomN + 1))
+      (2 to n).foreach(i => sheet.putCellValue(s"a$i", s"=a${i - 1}+1") shouldEqual Some(Right(i)))
     )
     time1("Update the top value")(
+      sheet.putCellValue(s"a$n", s"=a${n - 2}+3") shouldEqual Some(Right(n + 1))
+    )
+    time1("Update the bottom value")(
       sheet.putCellValue(s"a1", s"=2") shouldEqual Some(Right(2))
     )
-    sheet.getCellValue(s"a$bottomN") shouldEqual Some(s"=a${bottomN - 1}+2", Right(bottomN + 2))
+    sheet.getCellValue(s"a${n / 2}") shouldEqual Some(s"=a${n / 2 - 1}+1", Right(n / 2 + 1))
+    time1("Update a value in the middle")(
+      sheet.putCellValue(s"a${n / 2}", s"=a${n / 2 - 2}+3") shouldEqual Some(Right(n / 2 + 2))
+    )
+    sheet.getCellValue(s"a$n") shouldEqual Some(s"=a${n - 2}+3", Right(n + 3))
   }
 
   it should "measure performance" in {

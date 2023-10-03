@@ -13,7 +13,7 @@ object Timing {
     val t1      = System.nanoTime()
     val seconds = (t1 - t0) / 1e9
     val rps     = scientificFormat(iterations / seconds)
-    logger.warn(f"$name%30s: \trps: $rps, \tseconds: ${Math.round(seconds * 10) / 10.0}")
+    logger.info(f"$name%30s: \trps: $rps, \tseconds: ${Math.round(seconds * 10) / 10.0}")
   }
 
   def time1[A](name: String)(f: => A): A = {
@@ -22,7 +22,7 @@ object Timing {
     val t1      = System.nanoTime()
     val seconds = (t1 - t0) / 1e9
     val rps     = scientificFormat(1 / seconds)
-    logger.warn(f"$name%30s: \trps: $rps, \tseconds: ${Math.round(seconds * 10) / 10.0}")
+    logger.info(f"$name%30s: \trps: $rps, \tseconds: ${Math.round(seconds * 10) / 10.0}")
     result
   }
 
