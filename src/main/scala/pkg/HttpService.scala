@@ -19,6 +19,8 @@ import java.nio.charset.StandardCharsets.UTF_8
 import scala.util.Try
 
 // TODO Increase stack size and add tests for long deps chains updates at the bottom and at the top
+// TODO check if docker container available memory can grow at runtime
+// TODO Xss is per-thread and is an extra to Xmx; May need to rewrite recursion to loops
 
 // TODO Store state in a volume
 

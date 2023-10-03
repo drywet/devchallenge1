@@ -18,5 +18,5 @@ lazy val root = (project in file("."))
       "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-macros"  % jsoniterVersion % "provided",
       "org.scalatest"                         %% "scalatest"              % "3.2.17"        % "test"
     )
-    // scalacOptions ++= Seq("-Ymacro-debug-lite", "-Xlog-implicits")
+    // scalacOptions ++= Seq("-Ymacro-debug-lite", "-Xlog-implicits"),
   )

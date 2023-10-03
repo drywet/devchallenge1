@@ -13,4 +13,14 @@ object Timing {
     println(f"$name%30s: \trps: $rps, \tseconds: ${Math.round(seconds * 10) / 10.0}")
   }
 
+  def time1[A](name: String)(f: => A): A = {
+    val t0      = System.nanoTime()
+    val result  = f
+    val t1      = System.nanoTime()
+    val seconds = (t1 - t0) / 1e9
+    val rps     = scientificFormat(1 / seconds)
+    println(f"$name%30s: \trps: $rps, \tseconds: ${Math.round(seconds * 10) / 10.0}")
+    result
+  }
+
 }

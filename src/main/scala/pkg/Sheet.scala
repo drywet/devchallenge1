@@ -2,6 +2,7 @@ package pkg
 
 import org.parboiled2.ParseError
 import pkg.StringUtils.normalizeFormula
+import pkg.Timing.{time, time1}
 
 import java.util.concurrent.locks.StampedLock
 import scala.collection.immutable.ArraySeq
@@ -216,7 +217,8 @@ class SheetImpl(val sheetId: String) extends Sheet with CellEvaluator {
 
   /** @return true on success, false otherwise */
   private def reevaluateTopCells(cell: Cell): Boolean = {
-    val topCells: ArraySeq[Cell] = allTopCellsTopologicallySorted(cell)
+    // TODO
+    val topCells: ArraySeq[Cell] = time1("topological sorting")(allTopCellsTopologicallySorted(cell))
     var i                        = 0
     var evaluationFailed         = false
     while (i < topCells.size && !evaluationFailed) {
@@ -236,6 +238,7 @@ class SheetImpl(val sheetId: String) extends Sheet with CellEvaluator {
     !evaluationFailed
   }
 
+  // TODO It takes 4 times longer than construction from scratch
   /** @return All top cells sorted such that no cell mentions in its topCells set any of the subsequent cells */
   private[pkg] def allTopCellsTopologicallySorted(cell: Cell): ArraySeq[Cell] = {
     val sorted: mutable.Builder[Cell, ArraySeq[Cell]] = ArraySeq.newBuilder
