@@ -210,10 +210,27 @@ class SheetImpl(val sheetId: String) extends Sheet with CellEvaluator {
     }
 
   private def hasCircularDeps(cell: Cell, newlyReferencedCells: Set[Cell]): Boolean = {
-    def loop(cell2: Cell): Boolean =
-      (cell == cell2) || cell2.value.bottomCells.exists(loop)
+    val buffer: mutable.ArrayDeque[Cell]    = mutable.ArrayDeque.from(newlyReferencedCells)
+    val traversed: mutable.ArrayDeque[Cell] = mutable.ArrayDeque()
 
-    newlyReferencedCells.exists(loop)
+    while (buffer.nonEmpty) {
+      val cell2 = buffer.removeLast()
+      if (cell == cell2) {
+        traversed.foreach(_.value.traversed = false)
+        return true
+      } else {
+        if (!cell2.value.traversed) {
+          cell2.value.traversed = true
+          traversed.append(cell2)
+          cell2.value.bottomCells.foreach { cell3 =>
+            if (!cell3.value.traversed)
+              buffer.append(cell3)
+          }
+        }
+      }
+    }
+    traversed.foreach(_.value.traversed = false)
+    false
   }
 
   /** @return true on success, false otherwise */
