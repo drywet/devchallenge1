@@ -4,6 +4,7 @@ import com.github.plokhotnyuk.jsoniter_scala.core.{readFromString, writeToString
 import io.activej.bytebuf.ByteBuf
 import io.activej.http.HttpMethod.{GET, POST}
 import io.activej.http._
+import org.slf4j.{Logger, LoggerFactory}
 import pkg.DoubleUtils.cellDoubleFormat
 import pkg.Model.{
   GetCellResponse,
@@ -41,7 +42,8 @@ class HttpService {
   private val maxPayloadSize: Int = 100 * 1024 * 1024
   private val debug               = false
 
-  private val service = new Service()
+  private val logger: Logger = LoggerFactory.getLogger(this.getClass)
+  private val service        = new Service()
 
   private val postCell: AsyncServlet = { request: HttpRequest =>
     request.loadBody(maxPayloadSize).`then` { (requestBody: ByteBuf) =>
@@ -62,7 +64,7 @@ class HttpService {
           }
       } catch {
         case e: Throwable =>
-          if (debug) println(s"Exception: $e")
+          if (debug) logger.warn(s"Exception: $e")
           val jsonStr = writeToString(PostCellResponse(value = sourceValueTry.getOrElse(""), result = Error))
           HttpResponse.ofCode(422).withJson(jsonStr).promise()
       }
@@ -82,7 +84,7 @@ class HttpService {
         .getOrElse(HttpResponse.ofCode(404).withJson(NotFound).promise())
     } catch {
       case e: Throwable =>
-        if (debug) println(s"Exception: $e")
+        if (debug) logger.warn(s"Exception: $e")
         HttpResponse.ofCode(404).withJson(NotFound).promise()
     }
   }
@@ -102,7 +104,7 @@ class HttpService {
         .getOrElse(HttpResponse.ofCode(404).withJson(NotFound).promise())
     } catch {
       case e: Throwable =>
-        if (debug) println(s"Exception: $e")
+        if (debug) logger.warn(s"Exception: $e")
         HttpResponse.ofCode(404).withJson(NotFound).promise()
     }
   }

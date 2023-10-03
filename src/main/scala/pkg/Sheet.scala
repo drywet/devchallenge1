@@ -1,6 +1,7 @@
 package pkg
 
 import org.parboiled2.ParseError
+import org.slf4j.{Logger, LoggerFactory}
 import pkg.StringUtils.normalizeFormula
 
 import java.util.concurrent.locks.StampedLock
@@ -30,6 +31,8 @@ trait CellEvaluator {
 class SheetImpl(val sheetId: String) extends Sheet with CellEvaluator {
 
   private val debug: Boolean = false
+
+  private val logger: Logger = LoggerFactory.getLogger(this.getClass)
 
   private val cells: mutable.HashMap[String, Cell] = new mutable.HashMap()
   private val lock: StampedLock                    = new StampedLock()
@@ -148,10 +151,10 @@ class SheetImpl(val sheetId: String) extends Sheet with CellEvaluator {
             val evaluatedResult = CalcParser.evaluate(expr)(cellEvaluator = this)
             evaluatedResult.map(evaluatedResult => CellValueExpr(expr) -> evaluatedResult)
           case Failure(e: ParseError) =>
-            if (debug) println(s"Cell $id Expression is not valid: ${parser.formatError(e)}")
+            if (debug) logger.warn(s"Cell $id Expression is not valid: ${parser.formatError(e)}")
             None
           case Failure(e) =>
-            if (debug) println(s"Cell $id Unexpected error during parsing run: $e")
+            if (debug) logger.warn(s"Cell $id Unexpected error during parsing run: $e")
             None
         }
       }
