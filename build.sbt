@@ -17,6 +17,8 @@ lazy val root = (project in file("."))
       "ch.qos.logback"                         % "logback-classic"        % "1.4.11",
       "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-macros"  % jsoniterVersion % "provided",
       "org.scalatest"                         %% "scalatest"              % "3.2.17"        % "test"
-    )
-    // scalacOptions ++= Seq("-Ymacro-debug-lite", "-Xlog-implicits"),
+    ),
+    // Performance tests must not be run in parallel
+    Test / parallelExecution := false
+    // scalacOptions ++= Seq("-Ymacro-debug-lite", "-Xlog-implicits")
   )

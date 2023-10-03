@@ -102,8 +102,13 @@ class SheetSpec extends AnyFlatSpec with should.Matchers {
     sheet.putCellValue("g", "=f+1") shouldEqual Some(Right(23))
 
     val sorted1 = sheet.allTopCellsTopologicallySorted(sheet.getCell("a").get).map(_.name)
-    sorted1.slice(0, 2) shouldEqual Seq("b", "c")
-    Set(sorted1.slice(2, 4), sorted1.slice(4, 6)) shouldEqual Set(Seq("d", "e"), Seq("f", "g"))
+    sorted1.indexOf("b") should be < sorted1.indexOf("c")
+    sorted1.indexOf("c") should be < sorted1.indexOf("d")
+    sorted1.indexOf("c") should be < sorted1.indexOf("e")
+    sorted1.indexOf("d") should be < sorted1.indexOf("e")
+    sorted1.indexOf("c") should be < sorted1.indexOf("f")
+    sorted1.indexOf("f") should be < sorted1.indexOf("g")
+
     sheet.allTopCellsTopologicallySorted(sheet.getCell("f").get).map(_.name) shouldEqual Seq("g")
     sheet.allTopCellsTopologicallySorted(sheet.getCell("g").get).map(_.name) shouldEqual Seq.empty
 
@@ -124,6 +129,8 @@ class SheetSpec extends AnyFlatSpec with should.Matchers {
     sheet.getCellValue("e") shouldEqual Some(("=c+d+1", Right(31)))
     sheet.getCellValue("f") shouldEqual Some(("=c+10", Right(23)))
     sheet.getCellValue("g") shouldEqual Some(("=f+1", Right(24)))
+
+    sheet.putCellValue("g", "=f+d+1") shouldEqual Some(Right(41))
   }
 
   it should "check a long formula chain" in {
