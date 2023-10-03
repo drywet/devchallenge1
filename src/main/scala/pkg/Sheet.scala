@@ -2,10 +2,8 @@ package pkg
 
 import org.parboiled2.ParseError
 import pkg.StringUtils.normalizeFormula
-import pkg.Timing.{time, time1}
 
 import java.util.concurrent.locks.StampedLock
-import scala.collection.immutable.ArraySeq
 import scala.collection.mutable
 import scala.util.{Failure, Success}
 
@@ -217,10 +215,9 @@ class SheetImpl(val sheetId: String) extends Sheet with CellEvaluator {
 
   /** @return true on success, false otherwise */
   private def reevaluateTopCells(cell: Cell): Boolean = {
-    // TODO
-    val topCells: ArraySeq[Cell] = time1("topological sorting")(allTopCellsTopologicallySorted(cell))
-    var i                        = 0
-    var evaluationFailed         = false
+    val topCells: mutable.ArrayDeque[Cell] = allTopCellsTopologicallySorted(cell)
+    var i                                  = 0
+    var evaluationFailed                   = false
     while (i < topCells.size && !evaluationFailed) {
       topCells(i).value.parsed.evaluate()(cellEvaluator = this) match {
         case Some(evaluatedResult) =>
@@ -238,39 +235,31 @@ class SheetImpl(val sheetId: String) extends Sheet with CellEvaluator {
     !evaluationFailed
   }
 
-  // TODO It takes 4 times longer than construction from scratch
-  // test: iterative loop vs recursion
-  // test: topCells array vs set
-  /** @return All top cells sorted such that no cell mentions in its topCells set any of the subsequent cells */
-  private[pkg] def allTopCellsTopologicallySorted(cell: Cell): ArraySeq[Cell] = {
-    val sorted: mutable.Builder[Cell, ArraySeq[Cell]] = ArraySeq.newBuilder
+  /** Observation: iterative topological sorting is a few times faster than construction of the tree from scratch, but
+   * recursive topological sorting is a few times slower
+   * @return All top cells sorted such that no cell mentions in its topCells set any of the subsequent cells */
+  private[pkg] def allTopCellsTopologicallySorted(cell: Cell): mutable.ArrayDeque[Cell] = {
+    val sorted: mutable.ArrayDeque[Cell]            = mutable.ArrayDeque()
+    val buffer: mutable.ArrayDeque[(Cell, Boolean)] = mutable.ArrayDeque.from(cell.value.topCells.map(_ -> false))
 
-    def loop(cell: Cell): Unit = {
-      cell.value.traversed = true
-      cell.value.topCells.foreach { cell2 =>
-        if (!cell2.value.traversed)
-          loop(cell2)
+    while (buffer.nonEmpty) {
+      val (cell: Cell, result: Boolean) = buffer.removeLast()
+      if (result) {
+        sorted.prepend(cell)
+      } else {
+        if (!cell.value.traversed) {
+          cell.value.traversed = true
+          buffer.append((cell, true))
+          cell.value.topCells.foreach { cell2 =>
+            if (!cell2.value.traversed) {
+              buffer.append((cell2, false))
+            }
+          }
+        }
       }
-      sorted += cell
     }
-
-    cell.value.topCells.foreach { cell =>
-      if (!cell.value.traversed)
-        loop(cell)
-    }
-
-    // In-place reverse
-    val reversed: ArraySeq[Cell] = sorted.result()
-    val array: Array[Cell]       = reversed.unsafeArray.asInstanceOf[Array[Cell]]
-    (0 until (reversed.length / 2)).foreach { i =>
-      val a = array(i)
-      array(i) = array(reversed.length - 1 - i)
-      array(reversed.length - 1 - i) = a
-    }
-
-    reversed.foreach(_.value.traversed = false)
-
-    reversed
+    sorted.foreach(_.value.traversed = false)
+    sorted
   }
 
   /** @return Some if the cell exists, None otherwise */
