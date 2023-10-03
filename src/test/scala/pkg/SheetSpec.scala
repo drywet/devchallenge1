@@ -2,7 +2,7 @@ package pkg
 
 import org.scalatest.flatspec._
 import org.scalatest.matchers._
-import pkg.DoubleUtils.scientificFormat
+import pkg.Timing.time
 
 import scala.util.Random
 
@@ -84,7 +84,7 @@ class SheetSpec extends AnyFlatSpec with should.Matchers {
     sheet.getCellValue("e") shouldEqual Some(("=c+d+1", Right(28)))
   }
 
-  it should "perf test" in {
+  it should "measure performance" in {
     time("Simple value", 1e6.toInt) {
       val sheet: Sheet = new SheetImpl(sheet1)
       sheet.putCellValue("a1", "1")
@@ -131,15 +131,6 @@ class SheetSpec extends AnyFlatSpec with should.Matchers {
       sheet.putCellValue("a1", "=((123+456*(2+-1))+789)/0.1")
       sheet.getCellValue("a1")
     }
-  }
-
-  private def time(name: String, iterations: Int)(f: => Unit): Unit = {
-    val t0 = System.nanoTime()
-    (1 to iterations).foreach(_ => f)
-    val t1      = System.nanoTime()
-    val seconds = (t1 - t0) / 1e9
-    val rps     = scientificFormat(iterations / seconds)
-    println(f"$name%30s: \trps: $rps, \tseconds: ${Math.round(seconds * 10) / 10.0}")
   }
 
 }

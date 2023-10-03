@@ -22,4 +22,10 @@ object StringUtils {
     Some(whitespaceRegex.replaceAllIn(a, ""))
   }
 
+  def normalizeId(id: String): Option[String] = {
+    // Minimize whitespace
+    val a = whitespaceRegex.replaceAllIn(id, " ").trim
+    if (!a.contains(' ')) Some(a.toLowerCase) else None
+  }
+
 }

@@ -9,26 +9,24 @@ import scala.collection.mutable
 import scala.util.{Failure, Success}
 
 trait Sheet {
+
+  /** @return Option[(sourceValue, evaluatedResult)] - Some if the cell exists, None otherwise */
   def getCellValue(id: String): Option[(String, Either[String, Double])]
+
+  /** @return Map[cellId, (sourceValue, evaluatedResult)] */
+  def getCellValues: Map[String, (String, Either[String, Double])]
+
+  /** @return evaluatedResult: Some on success, None otherwise */
   def putCellValue(id: String, sourceValue: String): Option[Either[String, Double]]
+
 }
 
 trait CellEvaluator {
 
-  /** @return None if the cell doesn't exist, Some otherwise */
+  /** @return Some if the cell exists, None otherwise */
   def getEvaluatedCellValue(id: String): Option[Either[String, Double]]
+
 }
-
-// TODO Optimization:
-//  replace PEG/AST parser with RPN?
-//  replace sets with ArraySeq where possible?
-
-// TODO Increase stack size and add tests for long deps chains updates at the bottom and at the top
-
-// TODO Add HTTP API and choose the optimal number of worker threads
-//  Docker
-
-// TODO Readme, document running tests as well
 
 class SheetImpl(val sheetId: String) extends Sheet with CellEvaluator {
 
@@ -43,6 +41,14 @@ class SheetImpl(val sheetId: String) extends Sheet with CellEvaluator {
     val lockStamp = lock.readLock()
     val result: Option[(String, Either[String, Double])] =
       cells.get(id).map(cell => cell.value.source -> cell.value.evaluated)
+    lock.unlockRead(lockStamp)
+    result
+  }
+
+  /** @return Map[cellId, (sourceValue, evaluatedResult)] */
+  def getCellValues: Map[String, (String, Either[String, Double])] = {
+    val lockStamp = lock.readLock()
+    val result    = cells.view.mapValues(cell => cell.value.source -> cell.value.evaluated).toMap
     lock.unlockRead(lockStamp)
     result
   }
@@ -70,7 +76,7 @@ class SheetImpl(val sheetId: String) extends Sheet with CellEvaluator {
    * If evaluation or deps checks fail, the cell value is reverted or the cell is removed;
    * otherwise, on success, put the cell to the top cells sets of its bottom cells and remove the cell from the top cells sets of no longer referenced cells 
    *
-   * @return evaluatedResult: None on error, Some otherwise */
+   * @return evaluatedResult: Some on success, None otherwise */
   def putCellValue(id: String, sourceValue: String): Option[Either[String, Double]] = {
     require(id.nonEmpty, "Cell id should be non-empty")
     val lockStamp = lock.writeLock()
@@ -80,7 +86,7 @@ class SheetImpl(val sheetId: String) extends Sheet with CellEvaluator {
       lock.unlockWrite(lockStamp)
   }
 
-  /** @return evaluatedResult: None on error, Some otherwise */
+  /** @return evaluatedResult: Some on success, None otherwise */
   private def putCellValueImpl(id: String, sourceValue: String): Option[Either[String, Double]] = {
     val existingCell      = cells.get(id)
     val previousCellValue = existingCell.map(_.value)
@@ -264,7 +270,7 @@ class SheetImpl(val sheetId: String) extends Sheet with CellEvaluator {
     reversed
   }
 
-  /** @return None if the cell doesn't exist, Some otherwise */
+  /** @return Some if the cell exists, None otherwise */
   override def getEvaluatedCellValue(id: String): Option[Either[String, Double]] =
     cells.get(id).map(_.value.evaluated)
 
