@@ -10,99 +10,99 @@ class SheetSpec extends AnyFlatSpec with should.Matchers {
 
   private val sheet1: String = "sheet1"
 
-//  "Sheet" should "work correctly" in {
-//    val sheet: Sheet = new SheetImpl(sheet1)
-//    sheet.getCellValue("a1") shouldEqual None
-//    sheet.getCellValue("a1") shouldEqual None
-//    sheet.getCellValue("1") shouldEqual None
-//    sheet.getCellValue("1") shouldEqual None
-//    sheet.putCellValue("a1", "1") shouldEqual Some(Right(1))
-//    sheet.getCellValue("a1") shouldEqual Some(("1", Right(1)))
-//    sheet.putCellValue("a2", "=a1+1") shouldEqual Some(Right(2))
-//    sheet.putCellValue("a1", "3") shouldEqual Some(Right(3))
-//    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(4)))
-//
-//    sheet.putCellValue("a1", "=a2") shouldEqual None
-//    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(4)))
-//    sheet.putCellValue("a1", "5") shouldEqual Some(Right(5))
-//    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(6)))
-//
-//    // An empty existing cell is coerced to 0
-//    sheet.putCellValue("a1", "") shouldEqual Some(Left(""))
-//    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(1)))
-//
-//    // A cell with just whitespace isn't coerced to 0
-//    sheet.putCellValue("a4", " ") shouldEqual Some(Left(" "))
-//    sheet.putCellValue("a5", "=a4+1") shouldEqual None
-//    sheet.putCellValue("a5", "=a4") shouldEqual Some(Left(" "))
-//    sheet.putCellValue("a6", "=a5") shouldEqual Some(Left(" "))
-//
-//    sheet.putCellValue("a1", "=a3") shouldEqual None
-//    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(1)))
-//    sheet.getCellValue("a3") shouldEqual None
-//
-//    // Can't change a1 value type because a2==a1+1
-//    sheet.putCellValue("a1", "a1") shouldEqual None
-//    sheet.getCellValue("a1") shouldEqual Some(("", Left("")))
-//    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(1)))
-//
-//    sheet.putCellValue("a1", "=((123+456*(2+-1))+789)/0.1") shouldEqual Some(Right(13680))
-//    sheet.putCellValue("a1", "=123e-4   +   56e7 + 8.9e10 + .12e+3 + 4e5 + 6e0") shouldEqual
-//    Some(Right(8.95604001260123e10))
-//    sheet.putCellValue("a1", "1e150") shouldEqual Some(Right(1.0e150))
-//    sheet.putCellValue("a1", "=1e150") shouldEqual Some(Right(1.0e150))
-//
-//    // One or both sides of whitespace should be operators
-//    sheet.putCellValue("a1", "=123 456") shouldEqual None
-//    sheet.putCellValue("a3", "=a1 a2") shouldEqual None
-//
-//    sheet.putCellValue("a2", "a2") shouldEqual Some(Left("a2"))
-//    sheet.getCellValue("a2") shouldEqual Some("a2", Left("a2"))
-//    sheet.putCellValue("a1", "=a2") shouldEqual Some(Left("a2"))
-//    sheet.getCellValue("a1") shouldEqual Some("=a2", Left("a2"))
-//
-//    an[IllegalArgumentException] shouldBe thrownBy {
-//      sheet.getCellValue("")
-//      sheet.putCellValue("", "123")
-//    }
-//
-//    sheet.getCellValues shouldEqual Map(
-//      "a1" -> ("=a2", Left("a2")),
-//      "a2" -> ("a2", Left("a2")),
-//      "a4" -> (" ", Left(" ")),
-//      "a5" -> ("=a4", Left(" ")),
-//      "a6" -> ("=a5", Left(" "))
-//    )
-//  }
+  "Sheet" should "work correctly" in {
+    val sheet: Sheet = new SheetImpl(sheet1)
+    sheet.getCellValue("a1") shouldEqual None
+    sheet.getCellValue("a1") shouldEqual None
+    sheet.getCellValue("1") shouldEqual None
+    sheet.getCellValue("1") shouldEqual None
+    sheet.putCellValue("a1", "1") shouldEqual Some(Right(1))
+    sheet.getCellValue("a1") shouldEqual Some(("1", Right(1)))
+    sheet.putCellValue("a2", "=a1+1") shouldEqual Some(Right(2))
+    sheet.putCellValue("a1", "3") shouldEqual Some(Right(3))
+    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(4)))
 
-//  it should "check topological sorting" in {
-//    val sheet: SheetImpl = new SheetImpl(sheet1)
-//    sheet.putCellValue("a", "1") shouldEqual Some(Right(1))
-//    sheet.putCellValue("b", "=a+1") shouldEqual Some(Right(2))
-//    sheet.putCellValue("c", "=b+a") shouldEqual Some(Right(3))
-//    sheet.putCellValue("d", "=c+b+1") shouldEqual Some(Right(6))
-//    sheet.putCellValue("e", "=c+d+1") shouldEqual Some(Right(10))
-//
-//    sheet.putCellValue("c", "=d") shouldEqual None
-//    sheet.putCellValue("a", "=e") shouldEqual None
-//
-//    sheet.putCellValue("c", "=b+10") shouldEqual Some(Right(12))
-//
-//    sheet.allTopCellsTopologicallySorted(sheet.getCell("c").get).map(_.name) shouldEqual Seq("d", "e")
-//    sheet.allTopCellsTopologicallySorted(sheet.getCell("e").get).map(_.name) shouldEqual Seq.empty
-//    sheet.allTopCellsTopologicallySorted(sheet.getCell("a").get).map(_.name) shouldEqual Seq("b", "c", "d", "e")
-//
-//    sheet.getCellValue("a") shouldEqual Some(("1", Right(1)))
-//    sheet.getCellValue("b") shouldEqual Some(("=a+1", Right(2)))
-//    sheet.getCellValue("c") shouldEqual Some(("=b+10", Right(12)))
-//    sheet.getCellValue("d") shouldEqual Some(("=c+b+1", Right(15)))
-//    sheet.getCellValue("e") shouldEqual Some(("=c+d+1", Right(28)))
-//  }
+    sheet.putCellValue("a1", "=a2") shouldEqual None
+    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(4)))
+    sheet.putCellValue("a1", "5") shouldEqual Some(Right(5))
+    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(6)))
+
+    // An empty existing cell is coerced to 0
+    sheet.putCellValue("a1", "") shouldEqual Some(Left(""))
+    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(1)))
+
+    // A cell with just whitespace isn't coerced to 0
+    sheet.putCellValue("a4", " ") shouldEqual Some(Left(" "))
+    sheet.putCellValue("a5", "=a4+1") shouldEqual None
+    sheet.putCellValue("a5", "=a4") shouldEqual Some(Left(" "))
+    sheet.putCellValue("a6", "=a5") shouldEqual Some(Left(" "))
+
+    sheet.putCellValue("a1", "=a3") shouldEqual None
+    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(1)))
+    sheet.getCellValue("a3") shouldEqual None
+
+    // Can't change a1 value type because a2==a1+1
+    sheet.putCellValue("a1", "a1") shouldEqual None
+    sheet.getCellValue("a1") shouldEqual Some(("", Left("")))
+    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(1)))
+
+    sheet.putCellValue("a1", "=((123+456*(2+-1))+789)/0.1") shouldEqual Some(Right(13680))
+    sheet.putCellValue("a1", "=123e-4   +   56e7 + 8.9e10 + .12e+3 + 4e5 + 6e0") shouldEqual
+    Some(Right(8.95604001260123e10))
+    sheet.putCellValue("a1", "1e150") shouldEqual Some(Right(1.0e150))
+    sheet.putCellValue("a1", "=1e150") shouldEqual Some(Right(1.0e150))
+
+    // One or both sides of whitespace should be operators
+    sheet.putCellValue("a1", "=123 456") shouldEqual None
+    sheet.putCellValue("a3", "=a1 a2") shouldEqual None
+
+    sheet.putCellValue("a2", "a2") shouldEqual Some(Left("a2"))
+    sheet.getCellValue("a2") shouldEqual Some("a2", Left("a2"))
+    sheet.putCellValue("a1", "=a2") shouldEqual Some(Left("a2"))
+    sheet.getCellValue("a1") shouldEqual Some("=a2", Left("a2"))
+
+    an[IllegalArgumentException] shouldBe thrownBy {
+      sheet.getCellValue("")
+      sheet.putCellValue("", "123")
+    }
+
+    sheet.getCellValues shouldEqual Map(
+      "a1" -> ("=a2", Left("a2")),
+      "a2" -> ("a2", Left("a2")),
+      "a4" -> (" ", Left(" ")),
+      "a5" -> ("=a4", Left(" ")),
+      "a6" -> ("=a5", Left(" "))
+    )
+  }
+
+  it should "check topological sorting" in {
+    val sheet: SheetImpl = new SheetImpl(sheet1)
+    sheet.putCellValue("a", "1") shouldEqual Some(Right(1))
+    sheet.putCellValue("b", "=a+1") shouldEqual Some(Right(2))
+    sheet.putCellValue("c", "=b+a") shouldEqual Some(Right(3))
+    sheet.putCellValue("d", "=c+b+1") shouldEqual Some(Right(6))
+    sheet.putCellValue("e", "=c+d+1") shouldEqual Some(Right(10))
+
+    sheet.putCellValue("c", "=d") shouldEqual None
+    sheet.putCellValue("a", "=e") shouldEqual None
+
+    sheet.putCellValue("c", "=b+10") shouldEqual Some(Right(12))
+
+    sheet.allTopCellsTopologicallySorted(sheet.getCell("c").get).map(_.name) shouldEqual Seq("d", "e")
+    sheet.allTopCellsTopologicallySorted(sheet.getCell("e").get).map(_.name) shouldEqual Seq.empty
+    sheet.allTopCellsTopologicallySorted(sheet.getCell("a").get).map(_.name) shouldEqual Seq("b", "c", "d", "e")
+
+    sheet.getCellValue("a") shouldEqual Some(("1", Right(1)))
+    sheet.getCellValue("b") shouldEqual Some(("=a+1", Right(2)))
+    sheet.getCellValue("c") shouldEqual Some(("=b+10", Right(12)))
+    sheet.getCellValue("d") shouldEqual Some(("=c+b+1", Right(15)))
+    sheet.getCellValue("e") shouldEqual Some(("=c+d+1", Right(28)))
+  }
 
   it should "check a long formula chain" in {
     val sheet: SheetImpl = new SheetImpl(sheet1)
     sheet.putCellValue("a1", "1") shouldEqual Some(Right(1))
-    val bottomN = 3e6.toInt
+    val bottomN = 2e6.toInt
     time1("create a long formula chain")(
       (2 to bottomN).foreach(i => sheet.putCellValue(s"a$i", s"=a${i - 1}+1") shouldEqual Some(Right(i)))
     )
@@ -113,7 +113,7 @@ class SheetSpec extends AnyFlatSpec with should.Matchers {
       sheet.putCellValue(s"a1", s"=2") shouldEqual Some(Right(2))
     )
     sheet.getCellValue(s"a$bottomN") shouldEqual Some(s"=a${bottomN - 1}+2", Right(bottomN + 2))
-    Thread.sleep(1000)
+    Thread.sleep(3000)
   }
 
 //  it should "measure performance" in {

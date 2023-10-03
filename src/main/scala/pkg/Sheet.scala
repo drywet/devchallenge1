@@ -239,6 +239,8 @@ class SheetImpl(val sheetId: String) extends Sheet with CellEvaluator {
   }
 
   // TODO It takes 4 times longer than construction from scratch
+  // test: iterative loop vs recursion
+  // test: topCells array vs set
   /** @return All top cells sorted such that no cell mentions in its topCells set any of the subsequent cells */
   private[pkg] def allTopCellsTopologicallySorted(cell: Cell): ArraySeq[Cell] = {
     val sorted: mutable.Builder[Cell, ArraySeq[Cell]] = ArraySeq.newBuilder
