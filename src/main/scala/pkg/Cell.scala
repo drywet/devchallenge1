@@ -14,7 +14,6 @@ case class CellValueNumber(value: Double) extends CellValueParsed {
 
 /** @param value Non-empty string */
 case class CellValueString(value: String) extends CellValueParsed {
-  require(value.nonEmpty, "Empty string values are not supported")
   def evaluate()(implicit cellEvaluator: CellEvaluator): Option[Left[String, Double]] = Some(Left(value))
 }
 

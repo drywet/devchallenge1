@@ -41,14 +41,14 @@ class AppHttpServerLauncherSpec extends AnyFlatSpec with should.Matchers with Be
       socket1.connect(localhost)
       socket2.connect(localhost)
       val res1 = Future(test(socket = socket1, sheetId = "sheet1", cellId = "cell1"))
-      val res2 = Future(test(socket = socket1, sheetId = "sheet2", cellId = "cell2"))
+      val res2 = Future(test(socket = socket2, sheetId = "sheet2", cellId = "cell2"))
       Await.result(Future.sequence(Seq(res1, res2)), 10.seconds)
     }.get
   }
 
   private def test(socket: Socket, sheetId: String, cellId: String) = {
     val request =
-      s"""POST /api/v1/$sheetId/$cellId HTTP/1.1
+      s"""POST /api/v1/%20${sheetId.toUpperCase}%20/%20${cellId.toUpperCase}%20 HTTP/1.1
          |Host: localhost
          |Connection: keep-alive
          |Content-Type: application/json; charset=utf-8
@@ -62,7 +62,13 @@ class AppHttpServerLauncherSpec extends AnyFlatSpec with should.Matchers with Be
          |Host: localhost
          |Connection: keep-alive
          |
-         |""".stripMargin.replace("\r\n", "\n").replace("\n", "\r\n")
+         |POST /api/v1/$sheetId/$cellId HTTP/1.1
+         |Host: localhost
+         |Connection: keep-alive
+         |Content-Type: application/json; charset=utf-8
+         |Content-Length: 3
+         |
+         |!@#""".stripMargin.replace("\r\n", "\n").replace("\n", "\r\n")
     socket.getOutputStream.write(encodeAscii(request))
     val expectedResponse =
       s"""HTTP/1.1 201 Created
@@ -80,7 +86,12 @@ class AppHttpServerLauncherSpec extends AnyFlatSpec with should.Matchers with Be
          |Content-Type: application/json; charset=utf-8
          |Content-Length: 39
          |
-         |{"$cellId":{"value":"=1+2","result":"3"}}""".stripMargin.replace("\r\n", "\n").replace("\n", "\r\n")
+         |{"$cellId":{"value":"=1+2","result":"3"}}HTTP/1.1 422 Unprocessable Entity
+         |Connection: keep-alive
+         |Content-Type: application/json; charset=utf-8
+         |Content-Length: 29
+         |
+         |{"value":"","result":"ERROR"}""".stripMargin.replace("\r\n", "\n").replace("\n", "\r\n")
     val response = new String(socket.getInputStream.readNBytes(expectedResponse.getBytes(UTF_8).length), UTF_8)
     response shouldEqual expectedResponse
   }

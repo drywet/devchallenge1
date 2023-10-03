@@ -44,10 +44,16 @@ object CalcParser {
       cellEvaluator: CellEvaluator
   ): Option[Right[String, Double]] = {
     val res = for {
-      a <- evaluate(a).flatMap(_.toOption)
-      b <- evaluate(b).flatMap(_.toOption)
+      a <- evaluate(a).flatMap(valueToNumber)
+      b <- evaluate(b).flatMap(valueToNumber)
     } yield op(a, b)
     res.map(Right(_))
+  }
+
+  private def valueToNumber(value: Either[String, Double]): Option[Double] = value match {
+    case Right(value)                 => Some(value)
+    case Left(value) if value.isEmpty => Some(0)
+    case _                            => None
   }
 
   def referencedVariables(expr: Expr): Set[String] = {

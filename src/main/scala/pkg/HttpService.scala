@@ -5,12 +5,18 @@ import io.activej.bytebuf.ByteBuf
 import io.activej.http.HttpMethod.{GET, POST}
 import io.activej.http._
 import pkg.DoubleUtils.cellDoubleFormat
-import pkg.Model.{GetCellResponse, GetSheetResponseCodec, GetSheetResponseItem, NotFound, Ok, PostCellRequest, PostCellResponse}
+import pkg.Model.{
+  GetCellResponse,
+  GetSheetResponseCodec,
+  GetSheetResponseItem,
+  NotFound,
+  Ok,
+  PostCellRequest,
+  PostCellResponse
+}
 
 import java.nio.charset.StandardCharsets.UTF_8
-
-// TODO empty cell is ok value, stored if upserted and can be coerced to 0
-//  just spaces aren't coerced to numbers
+import scala.util.Try
 
 // TODO Increase stack size and add tests for long deps chains updates at the bottom and at the top
 
@@ -37,10 +43,11 @@ class HttpService {
 
   private val postCell: AsyncServlet = { request: HttpRequest =>
     request.loadBody(maxPayloadSize).`then` { (requestBody: ByteBuf) =>
-      val sheetId     = request.getPathParameter("sheet_id")
-      val cellId      = request.getPathParameter("cell_id")
-      val sourceValue = readFromString[PostCellRequest](requestBody.asString(UTF_8)).value
+      val sheetId        = request.getPathParameter("sheet_id")
+      val cellId         = request.getPathParameter("cell_id")
+      val sourceValueTry = Try(readFromString[PostCellRequest](requestBody.asString(UTF_8)).value)
       try {
+        val sourceValue = sourceValueTry.get
         service
           .putCell(sheetId, cellId, sourceValue)
           .map { result =>
@@ -54,7 +61,7 @@ class HttpService {
       } catch {
         case e: Throwable =>
           if (debug) println(s"Exception: $e")
-          val jsonStr = writeToString(PostCellResponse(value = sourceValue, result = Error))
+          val jsonStr = writeToString(PostCellResponse(value = sourceValueTry.getOrElse(""), result = Error))
           HttpResponse.ofCode(422).withJson(jsonStr).promise()
       }
     }

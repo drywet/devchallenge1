@@ -10,7 +10,7 @@ class SheetSpec extends AnyFlatSpec with should.Matchers {
 
   private val sheet1: String = "sheet1"
 
-  "Sheet" should "work correctly in sequential fashion" in {
+  "Sheet" should "work correctly" in {
     val sheet: Sheet = new SheetImpl(sheet1)
     sheet.getCellValue("a1") shouldEqual None
     sheet.getCellValue("a1") shouldEqual None
@@ -27,17 +27,24 @@ class SheetSpec extends AnyFlatSpec with should.Matchers {
     sheet.putCellValue("a1", "5") shouldEqual Some(Right(5))
     sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(6)))
 
-    sheet.putCellValue("a1", "") shouldEqual None
-    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(6)))
+    // An empty existing cell is coerced to 0
+    sheet.putCellValue("a1", "") shouldEqual Some(Left(""))
+    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(1)))
+
+    // A cell with just whitespace isn't coerced to 0
+    sheet.putCellValue("a4", " ") shouldEqual Some(Left(" "))
+    sheet.putCellValue("a5", "=a4+1") shouldEqual None
+    sheet.putCellValue("a5", "=a4") shouldEqual Some(Left(" "))
+    sheet.putCellValue("a6", "=a5") shouldEqual Some(Left(" "))
 
     sheet.putCellValue("a1", "=a3") shouldEqual None
-    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(6)))
+    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(1)))
     sheet.getCellValue("a3") shouldEqual None
 
     // Can't change a1 value type because a2==a1+1
     sheet.putCellValue("a1", "a1") shouldEqual None
-    sheet.getCellValue("a1") shouldEqual Some(("5", Right(5)))
-    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(6)))
+    sheet.getCellValue("a1") shouldEqual Some(("", Left("")))
+    sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(1)))
 
     sheet.putCellValue("a1", "=((123+456*(2+-1))+789)/0.1") shouldEqual Some(Right(13680))
     sheet.putCellValue("a1", "=123e-4   +   56e7 + 8.9e10 + .12e+3 + 4e5 + 6e0") shouldEqual
@@ -45,7 +52,7 @@ class SheetSpec extends AnyFlatSpec with should.Matchers {
     sheet.putCellValue("a1", "1e150") shouldEqual Some(Right(1.0e150))
     sheet.putCellValue("a1", "=1e150") shouldEqual Some(Right(1.0e150))
 
-    // Either side of whitespace should be an operator
+    // One or both sides of whitespace should be operators
     sheet.putCellValue("a1", "=123 456") shouldEqual None
     sheet.putCellValue("a3", "=a1 a2") shouldEqual None
 
@@ -58,6 +65,14 @@ class SheetSpec extends AnyFlatSpec with should.Matchers {
       sheet.getCellValue("")
       sheet.putCellValue("", "123")
     }
+
+    sheet.getCellValues shouldEqual Map(
+      "a1" -> ("=a2", Left("a2")),
+      "a2" -> ("a2", Left("a2")),
+      "a4" -> (" ", Left(" ")),
+      "a5" -> ("=a4", Left(" ")),
+      "a6" -> ("=a5", Left(" "))
+    )
   }
 
   it should "check topological sorting" in {

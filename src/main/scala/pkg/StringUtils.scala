@@ -11,7 +11,7 @@ object StringUtils {
   def normalizeFormula(expr: String): Option[String] = {
     // Minimize whitespace
     val a = whitespaceRegex.replaceAllIn(expr, " ").trim
-    // Either side of whitespace should be an operator
+    // One or both sides of whitespace should be operators
     (1 until (a.length - 1)).foreach { i =>
       if (a(i) == ' ') {
         if (!(operators(a(i - 1)) || operators(a(i + 1))))

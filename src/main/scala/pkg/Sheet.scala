@@ -159,10 +159,8 @@ class SheetImpl(val sheetId: String) extends Sheet with CellEvaluator {
     } else if (sourceValue.toDoubleOption.isDefined) {
       val number = sourceValue.toDouble
       Some(CellValueNumber(number) -> Right(number))
-    } else if (sourceValue.nonEmpty) {
-      Some(CellValueString(sourceValue) -> Left(sourceValue))
     } else {
-      None
+      Some(CellValueString(sourceValue) -> Left(sourceValue))
     }
   }
 
