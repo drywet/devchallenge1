@@ -153,6 +153,15 @@ class SheetSpec extends AnyFlatSpec with should.Matchers {
     sheet.getCellValue(s"a$n") shouldEqual Some(s"=a${n - 2}+3", Right(n + 3))
   }
 
+  it should "check a long formula" in {
+    val sheet: SheetImpl = new SheetImpl(sheet1)
+    val n                = 1e6.toInt
+    val formula          = "+1" * n
+    time1("Calculate a long formula")(
+      sheet.putCellValue("a1", s"=$formula") shouldEqual Some(Right(n))
+    )
+  }
+
   it should "measure performance" in {
     time("Simple value", 1e6.toInt) {
       val sheet: Sheet = new SheetImpl(sheet1)
