@@ -35,7 +35,7 @@ class TestHttpServerLauncherSpec extends AnyFlatSpec with should.Matchers with B
   }
 
   override protected def afterAll(): Unit = {
-    launcher.shutdown()
+    launcher.close()
     executionContext.shutdown()
   }
 

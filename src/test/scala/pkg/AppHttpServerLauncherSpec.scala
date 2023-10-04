@@ -21,7 +21,7 @@ class AppHttpServerLauncherSpec extends AnyFlatSpec with should.Matchers with Be
   implicit val executionContext: ExecutionContextExecutorService =
     ExecutionContext.fromExecutorService(new ScheduledThreadPoolExecutor(10))
 
-  val launcher = new AppHttpServerLauncher(port, serverWorkerCount)
+  val launcher = new AppHttpServerLauncher(port, serverWorkerCount, "volume/db_app_http_server_launcher_spec", true)
 
   override protected def beforeAll(): Unit = {
     Future(launcher.launch(Array.empty))
@@ -29,7 +29,7 @@ class AppHttpServerLauncherSpec extends AnyFlatSpec with should.Matchers with Be
   }
 
   override protected def afterAll(): Unit = {
-    launcher.shutdown()
+    launcher.close()
     executionContext.shutdown()
   }
 

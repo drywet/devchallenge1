@@ -1,12 +1,13 @@
 package pkg
 
-import org.parboiled2.ParseError
-import org.slf4j.{Logger, LoggerFactory}
+import com.github.plokhotnyuk.jsoniter_scala.core.writeToString
+import pkg.CalcParser.parseExpression
+import pkg.Model.{DbKey, DbValue}
 import pkg.StringUtils.normalizeFormula
 
+import java.nio.charset.StandardCharsets.UTF_8
 import java.util.concurrent.locks.StampedLock
 import scala.collection.mutable
-import scala.util.{Failure, Success}
 
 trait Sheet {
 
@@ -28,11 +29,7 @@ trait CellEvaluator {
 
 }
 
-class SheetImpl(val sheetId: String) extends Sheet with CellEvaluator {
-
-  private val debug: Boolean = false
-
-  private val logger: Logger = LoggerFactory.getLogger(this.getClass)
+class SheetImpl(val sheetId: String, db: Option[Db]) extends Sheet with CellEvaluator {
 
   private val cells: mutable.HashMap[String, Cell] = new mutable.HashMap()
   private val lock: StampedLock                    = new StampedLock()
@@ -82,9 +79,17 @@ class SheetImpl(val sheetId: String) extends Sheet with CellEvaluator {
   def putCellValue(id: String, sourceValue: String): Option[Either[String, Double]] = {
     require(id.nonEmpty, "Cell id should be non-empty")
     val lockStamp = lock.writeLock()
-    try
-      putCellValueImpl(id = id, sourceValue = sourceValue)
-    finally
+    try {
+      val result = putCellValueImpl(id = id, sourceValue = sourceValue)
+      result.foreach(_ =>
+        db.foreach { db =>
+          val key   = writeToString(DbKey(sheetId = sheetId, cellId = id))
+          val value = writeToString(DbValue(sourceValue))
+          db.db.put(key.getBytes(UTF_8), value.getBytes(UTF_8))
+        }
+      )
+      result
+    } finally
       lock.unlockWrite(lockStamp)
   }
 
@@ -145,17 +150,9 @@ class SheetImpl(val sheetId: String) extends Sheet with CellEvaluator {
   ): Option[(CellValueParsed, Either[String, Double])] = {
     if (sourceValue.startsWith("=")) {
       normalizeFormula(sourceValue.drop(1)).flatMap { formula =>
-        val parser = new CalcParser(formula)
-        parser.InputLine.run() match {
-          case Success(expr) =>
-            val evaluatedResult = CalcParser.evaluate(expr)(cellEvaluator = this)
-            evaluatedResult.map(evaluatedResult => CellValueExpr(expr) -> evaluatedResult)
-          case Failure(e: ParseError) =>
-            if (debug) logger.warn(s"Cell $id Expression is not valid: ${parser.formatError(e)}")
-            None
-          case Failure(e) =>
-            if (debug) logger.warn(s"Cell $id Unexpected error during parsing run: $e")
-            None
+        parseExpression(id, formula).flatMap { expr =>
+          val evaluatedResult = CalcParser.evaluate(expr)(cellEvaluator = this)
+          evaluatedResult.map(evaluatedResult => CellValueExpr(expr) -> evaluatedResult)
         }
       }
     } else if (sourceValue.toDoubleOption.isDefined) {

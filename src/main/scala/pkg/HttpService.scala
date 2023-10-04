@@ -33,7 +33,7 @@ import scala.util.Try
 //  replace PEG/AST parser with RPN?
 //  replace sets with ArraySeq where possible?
 
-class HttpService {
+class HttpService(db: Option[Db]) {
 
   val Error: String = "ERROR"
 
@@ -41,7 +41,7 @@ class HttpService {
   private val debug               = false
 
   private val logger: Logger = LoggerFactory.getLogger(this.getClass)
-  private val service        = new Service()
+  private val service = new Service(db)
 
   private val postCell: AsyncServlet = { request: HttpRequest =>
     request.loadBody(maxPayloadSize).`then` { (requestBody: ByteBuf) =>

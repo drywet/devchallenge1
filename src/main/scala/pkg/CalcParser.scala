@@ -2,12 +2,18 @@ package pkg
 
 import org.parboiled2.CharPredicate.Digit
 import org.parboiled2._
+import org.slf4j.{Logger, LoggerFactory}
 
 import scala.collection.mutable
+import scala.util.{Failure, Success}
 
 /** Based on <a href="https://github.com/sirthias/parboiled2/blob/master/examples/src/main/scala/org/parboiled2/examples/Calculator2.scala">Calculator2.scala</a>
  * Extended with support for float numbers and variables */
 object CalcParser {
+
+  private val debug: Boolean = false
+
+  private val logger: Logger = LoggerFactory.getLogger(this.getClass)
 
   private val Dot: CharPredicate       = CharPredicate('.')
   private val E: CharPredicate         = CharPredicate('e', 'E')
@@ -27,6 +33,20 @@ object CalcParser {
       ('\u002e' to '\u002e') ++
       ('\u0030' to '\uffef')
   )
+
+  def parseExpression(cellId: String, formula: String): Option[Expr] = {
+    val parser = new CalcParser(formula)
+    parser.InputLine.run() match {
+      case Success(expr) =>
+        Some(expr)
+      case Failure(e: ParseError) =>
+        if (debug) logger.warn(s"Cell $cellId expression is not valid: ${parser.formatError(e)}")
+        None
+      case Failure(e) =>
+        if (debug) logger.warn(s"Cell $cellId unexpected error during parsing run: $e")
+        None
+    }
+  }
 
   /** Evaluate a parsed expression in iterative fashion. A recursive implementation is more concise than the iterative one, 
    * but is less performant and requires large thread stack size for calculating long expressions.

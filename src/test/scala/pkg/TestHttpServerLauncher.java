@@ -8,7 +8,7 @@ import io.activej.inject.module.Module;
 import io.activej.worker.annotation.Worker;
 import io.activej.worker.annotation.WorkerId;
 
-public class TestHttpServerLauncher extends HttpServerLauncher {
+public class TestHttpServerLauncher extends HttpServerLauncher implements AutoCloseable {
 
     private final long requestDelayMillis;
 
@@ -32,6 +32,11 @@ public class TestHttpServerLauncher extends HttpServerLauncher {
                 };
             }
         };
+    }
+
+    @Override
+    public void close() throws Exception {
+        this.shutdown();
     }
 
 }

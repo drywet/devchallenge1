@@ -1,0 +1,11 @@
+version: '2'
+services:
+  main:
+    container_name: devchallenge1_jkhdfbnsk3
+    build: .
+    ports:
+      - '8080:8080'
+    volumes:
+      - ./:/root
+    environment:
+      SBT_OPTS: '-Xms512m -XX:MaxRAMPercentage=80 -Xss10M'

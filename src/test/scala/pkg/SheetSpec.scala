@@ -2,17 +2,32 @@ package pkg
 
 import org.scalatest.flatspec._
 import org.scalatest.matchers._
+import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach}
 import pkg.CalcParser.{Addition, Multiplication, NumberValue, Subtraction}
 import pkg.Timing.{time, time1}
 
 import scala.util.Random
 
-class SheetSpec extends AnyFlatSpec with should.Matchers {
+class SheetSpec extends AnyFlatSpec with should.Matchers with BeforeAndAfterAll with BeforeAndAfterEach {
 
   private val sheet1: String = "sheet1"
 
+  // Testing performance with a DB would give different results
+  val testWithDb             = false
+  private var db: Option[Db] = None
+
+  override protected def beforeEach(): Unit = {
+    db.foreach(_.close())
+    if (testWithDb) {
+      db = Some(new Db("volume/db_sheet_spec", recreate = true))
+    }
+  }
+
+  override protected def afterAll(): Unit =
+    db.foreach(_.close())
+
   "Sheet" should "work correctly" in {
-    val sheet: Sheet = new SheetImpl(sheet1)
+    val sheet: Sheet = new SheetImpl(sheet1, db)
     sheet.getCellValue("a1") shouldEqual None
     sheet.getCellValue("a1") shouldEqual None
     sheet.getCellValue("1") shouldEqual None
@@ -77,7 +92,7 @@ class SheetSpec extends AnyFlatSpec with should.Matchers {
   }
 
   it should "check topological sorting" in {
-    val sheet: SheetImpl = new SheetImpl(sheet1)
+    val sheet: SheetImpl = new SheetImpl(sheet1, db)
     sheet.putCellValue("a", "1") shouldEqual Some(Right(1))
     sheet.putCellValue("b", "=a+1") shouldEqual Some(Right(2))
     sheet.putCellValue("c", "=b+a") shouldEqual Some(Right(3))
@@ -135,7 +150,7 @@ class SheetSpec extends AnyFlatSpec with should.Matchers {
   }
 
   it should "check a long formula chain" in {
-    val sheet: SheetImpl = new SheetImpl(sheet1)
+    val sheet: SheetImpl = new SheetImpl(sheet1, db)
     sheet.putCellValue("a1", "1") shouldEqual Some(Right(1))
     val n = 1e6.toInt
     time1("Create a long formula chain")(
@@ -155,7 +170,7 @@ class SheetSpec extends AnyFlatSpec with should.Matchers {
   }
 
   it should "calculate an expression" in {
-    val sheet = new SheetImpl(sheet1)
+    val sheet = new SheetImpl(sheet1, db)
     val expr = Multiplication(
       Addition(
         NumberValue("1"),
@@ -170,7 +185,7 @@ class SheetSpec extends AnyFlatSpec with should.Matchers {
   }
 
   it should "check a long formula" in {
-    val sheet: SheetImpl = new SheetImpl(sheet1)
+    val sheet: SheetImpl = new SheetImpl(sheet1, db)
     val n                = 1e6.toInt
     val formula          = "+1" * n
     time1("Calculate a long formula")(
@@ -180,19 +195,19 @@ class SheetSpec extends AnyFlatSpec with should.Matchers {
 
   it should "measure performance" in {
     time("Simple value", 1e6.toInt) {
-      val sheet: Sheet = new SheetImpl(sheet1)
+      val sheet: Sheet = new SheetImpl(sheet1, db)
       sheet.putCellValue("a1", "1")
       sheet.getCellValue("a1")
     }
 
     time("Simple expression", 1e6.toInt) {
-      val sheet: Sheet = new SheetImpl(sheet1)
+      val sheet: Sheet = new SheetImpl(sheet1, db)
       sheet.putCellValue("a1", "=1")
       sheet.getCellValue("a1")
     }
 
     time("Simple expression utf", 1e6.toInt) {
-      val sheet: Sheet = new SheetImpl(sheet1)
+      val sheet: Sheet = new SheetImpl(sheet1, db)
       sheet.putCellValue("Ａ1", "=1")
       sheet.getCellValue("Ａ1")
     }
@@ -201,7 +216,7 @@ class SheetSpec extends AnyFlatSpec with should.Matchers {
       val iterations = 1e6.toInt
       val data       = (1 to iterations).map(_ => ("a" + Random.alphanumeric(5), Random.nextInt.toString)).toArray.iterator
       time("Various simple values", iterations) {
-        val sheet: Sheet  = new SheetImpl(sheet1)
+        val sheet: Sheet  = new SheetImpl(sheet1, db)
         val (name, value) = data.next()
         sheet.putCellValue(name, value)
         sheet.getCellValue(name)
@@ -213,7 +228,7 @@ class SheetSpec extends AnyFlatSpec with should.Matchers {
       val data =
         (1 to iterations).map(_ => ("a" + Random.alphanumeric(5), s"=${Random.nextInt.toString}")).toArray.iterator
       time("Various simple expressions", iterations) {
-        val sheet: Sheet  = new SheetImpl(sheet1)
+        val sheet: Sheet  = new SheetImpl(sheet1, db)
         val (name, value) = data.next()
         sheet.putCellValue(name, value)
         sheet.getCellValue(name)
@@ -221,7 +236,7 @@ class SheetSpec extends AnyFlatSpec with should.Matchers {
     }
 
     time("Complex expression", 1e6.toInt) {
-      val sheet: Sheet = new SheetImpl(sheet1)
+      val sheet: Sheet = new SheetImpl(sheet1, db)
       sheet.putCellValue("a1", "=((123+456*(2+-1))+789)/0.1")
       sheet.getCellValue("a1")
     }

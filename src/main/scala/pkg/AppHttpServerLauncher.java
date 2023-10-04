@@ -6,13 +6,17 @@ import io.activej.inject.module.AbstractModule;
 import io.activej.inject.module.Module;
 import io.activej.worker.annotation.Worker;
 import io.activej.worker.annotation.WorkerId;
+import scala.Some;
 
-public class AppHttpServerLauncher extends HttpServerLauncher {
+public class AppHttpServerLauncher extends HttpServerLauncher implements AutoCloseable {
 
-    private final HttpService httpService = new HttpService();
+    private final Db db;
+    private final HttpService httpService;
 
-    public AppHttpServerLauncher(int port, int workers) {
+    public AppHttpServerLauncher(int port, int workers, String dbPath, boolean recreateDb) {
         super(port, workers);
+        db = new Db(dbPath, recreateDb);
+        httpService = new HttpService(Some.apply(db));
     }
 
     /**
@@ -27,6 +31,12 @@ public class AppHttpServerLauncher extends HttpServerLauncher {
                 return httpService.servlet();
             }
         };
+    }
+
+    @Override
+    public void close() throws Exception {
+        this.shutdown();
+        db.close();
     }
 
 }
