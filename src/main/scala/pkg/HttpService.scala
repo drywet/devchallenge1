@@ -19,20 +19,6 @@ import pkg.Model.{
 import java.nio.charset.StandardCharsets.UTF_8
 import scala.util.Try
 
-// TODO Store state in a volume
-
-// TODO docker-compose
-
-// TODO document
-
-// TODO check if docker container available memory can grow at runtime
-
-// TODO load test with k6
-
-// TODO Optimization:
-//  replace PEG/AST parser with RPN?
-//  replace sets with ArraySeq where possible?
-
 class HttpService(db: Option[Db]) {
 
   val Error: String = "ERROR"
