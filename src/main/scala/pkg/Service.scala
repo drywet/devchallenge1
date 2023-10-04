@@ -9,6 +9,7 @@ import pkg.StringUtils.{normalizeFormula, normalizeId}
 import java.nio.charset.StandardCharsets.UTF_8
 import java.util.concurrent.ConcurrentHashMap
 import scala.collection.mutable
+import scala.util.{Failure, Success, Try, Using}
 
 class Service(db: Option[Db]) {
 
@@ -18,44 +19,54 @@ class Service(db: Option[Db]) {
 
   db.foreach { db =>
     // Restore the state from the database
-    val iterator = db.db.newIterator()
-    iterator.seekToFirst()
-    val sheetItems: mutable.ArrayDeque[(String, DbItemParsed)] = mutable.ArrayDeque()
-    while (iterator.isValid) {
-      val key     = new String(iterator.key, UTF_8)
-      val dbKey   = readFromString[DbKey](key)
-      val value   = new String(iterator.value, UTF_8)
-      val dbValue = readFromString[DbValue](value)
-      val expression: Option[Expr] = if (dbValue.value.startsWith("=")) {
-        normalizeFormula(dbValue.value.drop(1)).flatMap(formula =>
-          parseExpression(cellId = dbKey.cellId, formula = formula)
-        )
-      } else None
-      val referencedVariables: Seq[String] =
-        expression.map(CalcParser.referencedVariables).map(_.toSeq).getOrElse(Seq.empty)
-      val dbItemParsed = DbItemParsed(
-        cellId = dbKey.cellId,
-        value = dbValue.value,
-        referencedVariables,
-        traversed = false
-      )
-      sheetItems.append((dbKey.sheetId, dbItemParsed))
-      iterator.next()
-    }
-    val sheetItemsMap: Map[String, mutable.ArrayDeque[DbItemParsed]] = sheetItems.groupMap(_._1)(_._2)
-    sheetItemsMap.foreach { case (sheetId, items) =>
-      sheets.put(sheetId, new SheetImpl(sheetId, Some(db)))
-      val itemsMap: Map[String, DbItemParsed] = items.groupMapReduce(_.cellId)(identity)((a, _) => a)
-      val sorted                              = allItemsTopologicallySorted(itemsMap)
-      sorted.reverseIterator.foreach { item =>
-        if (putCell(sheetId, item.cellId, item.value).isEmpty) {
-          logger.warn(s"Couldn't restore a value for cell ${item.cellId}")
+    loadDbItems(db) match {
+      case Success(sheetItems) =>
+        val sheetItemsMap: Map[String, mutable.ArrayDeque[DbItemParsed]] = sheetItems.groupMap(_._1)(_._2)
+        sheetItemsMap.foreach { case (sheetId, items) =>
+          sheets.put(sheetId, new SheetImpl(sheetId, Some(db)))
+          val itemsMap: Map[String, DbItemParsed] = items.groupMapReduce(_.cellId)(identity)((a, _) => a)
+          val sorted                              = allItemsTopologicallySorted(itemsMap)
+          sorted.reverseIterator.foreach { item =>
+            if (putCell(sheetId, item.cellId, item.value).isEmpty) {
+              logger.warn(s"Couldn't restore a value for cell ${item.cellId}")
+            }
+          }
         }
-      }
+      case Failure(e) =>
+        logger.warn("Couldn't load data from DB")
     }
   }
 
-  private[pkg] def allItemsTopologicallySorted(
+  private def loadDbItems(db: Db): Try[mutable.ArrayDeque[(String, DbItemParsed)]] = {
+    Using(db.db.newIterator()) { iterator =>
+      iterator.seekToFirst()
+      val sheetItems: mutable.ArrayDeque[(String, DbItemParsed)] = mutable.ArrayDeque()
+      while (iterator.isValid) {
+        val key     = new String(iterator.key, UTF_8)
+        val dbKey   = readFromString[DbKey](key)
+        val value   = new String(iterator.value, UTF_8)
+        val dbValue = readFromString[DbValue](value)
+        val expression: Option[Expr] = if (dbValue.value.startsWith("=")) {
+          normalizeFormula(dbValue.value.drop(1)).flatMap(formula =>
+            parseExpression(cellId = dbKey.cellId, formula = formula)
+          )
+        } else None
+        val referencedVariables: Seq[String] =
+          expression.map(CalcParser.referencedVariables).map(_.toSeq).getOrElse(Seq.empty)
+        val dbItemParsed = DbItemParsed(
+          cellId = dbKey.cellId,
+          value = dbValue.value,
+          referencedVariables,
+          traversed = false
+        )
+        sheetItems.append((dbKey.sheetId, dbItemParsed))
+        iterator.next()
+      }
+      sheetItems
+    }
+  }
+
+  private def allItemsTopologicallySorted(
       itemsMap: Map[String, DbItemParsed]
   ): mutable.ArrayDeque[DbItemParsed] = {
     val sorted: mutable.ArrayDeque[DbItemParsed]            = mutable.ArrayDeque()
