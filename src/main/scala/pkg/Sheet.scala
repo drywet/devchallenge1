@@ -263,8 +263,8 @@ class SheetImpl(val sheetId: String) extends Sheet with CellEvaluator {
     val buffer: mutable.ArrayDeque[(Cell, Boolean)] = mutable.ArrayDeque.from(cell.value.topCells.map(_ -> false))
 
     while (buffer.nonEmpty) {
-      val (cell: Cell, result: Boolean) = buffer.removeLast()
-      if (result) {
+      val (cell: Cell, traversed: Boolean) = buffer.removeLast()
+      if (traversed) {
         sorted.prepend(cell)
       } else {
         if (!cell.value.traversed) {

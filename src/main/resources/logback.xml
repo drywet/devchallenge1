@@ -6,6 +6,7 @@
     </appender>
 
     <logger name="pkg" level="info"/>
+    <logger name="pkg.AppHttpServerLauncher" level="warn"/>
 
     <root level="warn">
         <appender-ref ref="STDOUT"/>

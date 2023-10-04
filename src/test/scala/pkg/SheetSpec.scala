@@ -2,6 +2,7 @@ package pkg
 
 import org.scalatest.flatspec._
 import org.scalatest.matchers._
+import pkg.CalcParser.{Addition, Multiplication, NumberValue, Subtraction}
 import pkg.Timing.{time, time1}
 
 import scala.util.Random
@@ -151,6 +152,21 @@ class SheetSpec extends AnyFlatSpec with should.Matchers {
       sheet.putCellValue(s"a${n / 2}", s"=a${n / 2 - 2}+3") shouldEqual Some(Right(n / 2 + 2))
     )
     sheet.getCellValue(s"a$n") shouldEqual Some(s"=a${n - 2}+3", Right(n + 3))
+  }
+
+  it should "calculate an expression" in {
+    val sheet = new SheetImpl(sheet1)
+    val expr = Multiplication(
+      Addition(
+        NumberValue("1"),
+        NumberValue("2")
+      ),
+      Subtraction(
+        NumberValue("3"),
+        NumberValue("4")
+      )
+    )
+    CalcParser.evaluate(expr)(sheet) shouldEqual Some(Right(-3))
   }
 
   it should "check a long formula" in {

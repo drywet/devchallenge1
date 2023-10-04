@@ -14,6 +14,7 @@ lazy val root = (project in file("."))
       "io.activej"                             % "activej-launchers-http" % activejVersion,
       "io.activej"                             % "activej-inject"         % activejVersion,
       "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-core"    % jsoniterVersion,
+      "org.rocksdb"                            % "rocksdbjni"             % "8.5.4",
       "ch.qos.logback"                         % "logback-classic"        % "1.4.11",
       "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-macros"  % jsoniterVersion % "provided",
       "org.scalatest"                         %% "scalatest"              % "3.2.17"        % "test"

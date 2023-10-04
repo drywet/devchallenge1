@@ -28,24 +28,110 @@ object CalcParser {
       ('\u0030' to '\uffef')
   )
 
-  /** Evaluate a parsed expression
+  /** Evaluate a parsed expression in iterative fashion. A recursive implementation is more concise than the iterative one, 
+   * but is less performant and requires large thread stack size for calculating long expressions.
    * @return None on failure, Some otherwise */
-  def evaluate(expr: Expr)(implicit cellEvaluator: CellEvaluator): Option[Either[String, Double]] =
-    expr match {
-      case NumberValue(v)       => v.toDoubleOption.map(Right(_))
-      case VariableValue(name)  => cellEvaluator.getEvaluatedCellValue(name)
-      case Addition(a, b)       => numberOp(a, b, _ + _)
-      case Subtraction(a, b)    => numberOp(a, b, _ - _)
-      case Multiplication(a, b) => numberOp(a, b, _ * _)
-      case Division(a, b)       => numberOp(a, b, _ / _)
-    }
+  def evaluate(expr: Expr)(implicit cellEvaluator: CellEvaluator): Option[Either[String, Double]] = {
+    val buffer: mutable.ArrayDeque[(Either[Expr, Option[Either[String, Double]]], Boolean)] =
+      mutable.ArrayDeque((Left(expr), false))
 
-  private def numberOp(a: Expr, b: Expr, op: (Double, Double) => Double)(implicit
-      cellEvaluator: CellEvaluator
+    while (buffer.nonEmpty) {
+      val (elem, traversed) = buffer.removeLast()
+      if (traversed) {
+        elem match {
+          case Right(evaluated) =>
+            //   otherwise, remove the two previous elems from the buffer and evaluate the expression, reversing the operands; put the result to the buffer
+            if (buffer.isEmpty) {
+              return evaluated
+            } else if (buffer.size == 1) {
+              throw new IllegalStateException("Unexpected buffer size")
+            } else {
+              val previous = buffer.removeLast()
+              if (!previous._2) {
+                // If the previous elem is not traversed
+                buffer.append((elem, traversed))
+                buffer.append(previous)
+              } else {
+                val previousEvaluated = previous._1.getOrElse(
+                  throw new IllegalStateException(s"A value expected, but got an expression: ${previous._1.left}")
+                )
+                val (exprOrValue, traversed) = buffer.removeLast()
+                if (!traversed) {
+                  throw new IllegalStateException("Traversed expression expected")
+                }
+                exprOrValue match {
+                  case Right(value) =>
+                    throw new IllegalStateException(s"Expression expected, but got value: '$value'")
+                  case Left(expr) =>
+                    expr match {
+                      case NumberValue(v) =>
+                        throw new IllegalStateException(s"Expression expected, but got a value expression: $v")
+                      case VariableValue(name) =>
+                        throw new IllegalStateException(s"Expression expected, but got a variable expression: $name")
+                      case _: Addition =>
+                        val value = applyOp(evaluated, previousEvaluated, _ + _)
+                        buffer.append((Right(value), true))
+                      case _: Subtraction =>
+                        val value = applyOp(evaluated, previousEvaluated, _ - _)
+                        buffer.append((Right(value), true))
+                      case _: Multiplication =>
+                        val value = applyOp(evaluated, previousEvaluated, _ * _)
+                        buffer.append((Right(value), true))
+                      case _: Division =>
+                        val value = applyOp(evaluated, previousEvaluated, _ / _)
+                        buffer.append((Right(value), true))
+                    }
+                }
+              }
+            }
+          case Left(expr) =>
+            throw new IllegalStateException(
+              "Traversed expressions should be removed from the buffer when processing traversed values"
+            )
+        }
+      } else {
+        elem match {
+          case Right(evaluated) =>
+            buffer.append((Right(evaluated), true))
+          case Left(expr) =>
+            expr match {
+              case NumberValue(v) =>
+                val value: Option[Right[String, Double]] = v.toDoubleOption.map(Right[String, Double])
+                buffer.append((Right(value), true))
+              case VariableValue(name) =>
+                val value: Option[Either[String, Double]] = cellEvaluator.getEvaluatedCellValue(name)
+                buffer.append((Right(value), true))
+              case Addition(a, b) =>
+                buffer.append((Left(expr), true))
+                buffer.append((Left(a), false))
+                buffer.append((Left(b), false))
+              case Subtraction(a, b) =>
+                buffer.append((Left(expr), true))
+                buffer.append((Left(a), false))
+                buffer.append((Left(b), false))
+              case Multiplication(a, b) =>
+                buffer.append((Left(expr), true))
+                buffer.append((Left(a), false))
+                buffer.append((Left(b), false))
+              case Division(a, b) =>
+                buffer.append((Left(expr), true))
+                buffer.append((Left(a), false))
+                buffer.append((Left(b), false))
+            }
+        }
+      }
+    }
+    None
+  }
+
+  private def applyOp(
+      a: Option[Either[String, Double]],
+      b: Option[Either[String, Double]],
+      op: (Double, Double) => Double
   ): Option[Right[String, Double]] = {
     val res = for {
-      a <- evaluate(a).flatMap(valueToNumber)
-      b <- evaluate(b).flatMap(valueToNumber)
+      a <- a.flatMap(valueToNumber)
+      b <- b.flatMap(valueToNumber)
     } yield op(a, b)
     res.map(Right(_))
   }
@@ -58,34 +144,37 @@ object CalcParser {
 
   def referencedVariables(expr: Expr): Set[String] = {
     val variables: mutable.Builder[String, Set[String]] = Set.newBuilder[String]
+    val buffer: mutable.ArrayDeque[Expr]                = mutable.ArrayDeque(expr)
 
-    def loop(expr: Expr): Unit = expr match {
-      case NumberValue(_)       =>
-      case VariableValue(name)  => variables += name
-      case Addition(a, b)       => loop(a); loop(b)
-      case Subtraction(a, b)    => loop(a); loop(b)
-      case Multiplication(a, b) => loop(a); loop(b)
-      case Division(a, b)       => loop(a); loop(b)
+    while (buffer.nonEmpty) {
+      val expr = buffer.removeLast()
+      expr match {
+        case NumberValue(_)       =>
+        case VariableValue(name)  => variables += name
+        case Addition(a, b)       => buffer.append(a); buffer.append(b)
+        case Subtraction(a, b)    => buffer.append(a); buffer.append(b)
+        case Multiplication(a, b) => buffer.append(a); buffer.append(b)
+        case Division(a, b)       => buffer.append(a); buffer.append(b)
+      }
     }
 
-    loop(expr)
     variables.result()
   }
 
   // Abstract syntax tree model
   sealed trait Expr
 
-  private case class NumberValue(value: String) extends Expr
+  case class NumberValue(value: String) extends Expr
 
-  private case class VariableValue(name: String) extends Expr
+  case class VariableValue(name: String) extends Expr
 
-  private case class Addition(lhs: Expr, rhs: Expr) extends Expr
+  case class Addition(lhs: Expr, rhs: Expr) extends Expr
 
-  private case class Subtraction(lhs: Expr, rhs: Expr) extends Expr
+  case class Subtraction(lhs: Expr, rhs: Expr) extends Expr
 
-  private case class Multiplication(lhs: Expr, rhs: Expr) extends Expr
+  case class Multiplication(lhs: Expr, rhs: Expr) extends Expr
 
-  private case class Division(lhs: Expr, rhs: Expr) extends Expr
+  case class Division(lhs: Expr, rhs: Expr) extends Expr
 
 }
 
