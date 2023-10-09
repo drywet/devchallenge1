@@ -3,6 +3,7 @@ package pkg
 import org.parboiled2.CharPredicate.Digit
 import org.parboiled2._
 import org.slf4j.{Logger, LoggerFactory}
+import pkg.Model.{BackwardPass, ForwardPass, Pass}
 
 import scala.collection.mutable
 import scala.util.{Failure, Success}
@@ -49,29 +50,31 @@ object CalcParser {
   }
 
   def evaluate(expr: Expr)(implicit cellEvaluator: CellEvaluator): Option[Either[String, Double]] = {
-    val stack      = mutable.Stack[Expr](expr)
-    val valueStack = mutable.Stack[Option[Either[String, Double]]]()
-
-    while (stack.nonEmpty) {
-      stack.pop() match {
-        case NumberValue(v)      => valueStack.push(v.toDoubleOption.map(Right(_)))
-        case VariableValue(name) => valueStack.push(cellEvaluator.getEvaluatedCellValue(name))
-        case op: BinOp =>
-          stack.push(op.evaluatedOp)
-          stack.push(op.lhs)
-          stack.push(op.rhs)
-        case op: EvaluatedOp =>
-          val a: Option[Either[String, Double]] = valueStack.pop()
-          val b: Option[Either[String, Double]] = valueStack.pop()
-          val res = for {
-            a <- a.flatMap(valueToNumber)
-            b <- b.flatMap(valueToNumber)
-          } yield Right(op.op(a, b))
-          valueStack.push(res)
-      }
+    expr match {
+      case NumberValue(v)      => v.toDoubleOption.map(Right(_))
+      case VariableValue(name) => cellEvaluator.getEvaluatedCellValue(name)
+      case _ =>
+        val stack      = mutable.Stack[(Expr, Pass)](expr -> ForwardPass)
+        val valueStack = mutable.Stack[Option[Double]]()
+        while (stack.nonEmpty) {
+          stack.pop() match {
+            case (NumberValue(v), ForwardPass) => valueStack.push(v.toDoubleOption)
+            case (VariableValue(name), ForwardPass) =>
+              valueStack.push(cellEvaluator.getEvaluatedCellValue(name).flatMap(valueToNumber))
+            case (op: BinOp, ForwardPass) =>
+              stack.push(op     -> BackwardPass)
+              stack.push(op.lhs -> ForwardPass)
+              stack.push(op.rhs -> ForwardPass)
+            case (op: BinOp, BackwardPass) =>
+              val res = for {
+                a <- valueStack.pop()
+                b <- valueStack.pop()
+              } yield evaluateOp(op, a, b)
+              valueStack.push(res)
+          }
+        }
+        valueStack.top.map(Right(_))
     }
-
-    valueStack.top
   }
 
   private def valueToNumber(value: Either[String, Double]): Option[Double] = value match {
@@ -80,19 +83,26 @@ object CalcParser {
     case _                            => None
   }
 
+  private def evaluateOp(op: BinOp, a: Double, b: Double) = op match {
+    case _: Addition       => a + b
+    case _: Subtraction    => a - b
+    case _: Multiplication => a * b
+    case _: Division       => a / b
+  }
+
   def referencedVariables(expr: Expr): Set[String] = {
     val variables: mutable.Builder[String, Set[String]] = Set.newBuilder[String]
-    val buffer: mutable.ArrayDeque[Expr]                = mutable.ArrayDeque(expr)
+    val stack: mutable.Stack[Expr]                      = mutable.Stack(expr)
 
-    while (buffer.nonEmpty) {
-      val expr = buffer.removeLast()
+    while (stack.nonEmpty) {
+      val expr = stack.removeLast()
       expr match {
         case NumberValue(_)       =>
         case VariableValue(name)  => variables += name
-        case Addition(a, b)       => buffer.append(a); buffer.append(b)
-        case Subtraction(a, b)    => buffer.append(a); buffer.append(b)
-        case Multiplication(a, b) => buffer.append(a); buffer.append(b)
-        case Division(a, b)       => buffer.append(a); buffer.append(b)
+        case Addition(a, b)       => stack.append(a); stack.append(b)
+        case Subtraction(a, b)    => stack.append(a); stack.append(b)
+        case Multiplication(a, b) => stack.append(a); stack.append(b)
+        case Division(a, b)       => stack.append(a); stack.append(b)
       }
     }
 
@@ -103,46 +113,17 @@ object CalcParser {
   sealed trait Expr
 
   sealed trait BinOp extends Expr {
-    def evaluatedOp: EvaluatedOp
     def lhs: Expr
     def rhs: Expr
   }
 
-  sealed trait EvaluatedOp extends Expr {
-    def op: (Double, Double) => Double
-  }
-
-  case class NumberValue(value: String) extends Expr
-
+  case class NumberValue(value: String)  extends Expr
   case class VariableValue(name: String) extends Expr
 
-  case class Addition(lhs: Expr, rhs: Expr) extends BinOp {
-    val evaluatedOp: EvaluatedOp = EvaluatedAddition
-  }
-  case object EvaluatedAddition extends EvaluatedOp {
-    override val op: (Double, Double) => Double = _ + _
-  }
-
-  case class Subtraction(lhs: Expr, rhs: Expr) extends BinOp {
-    val evaluatedOp: EvaluatedOp = EvaluatedSubtraction
-  }
-  case object EvaluatedSubtraction extends EvaluatedOp {
-    override val op: (Double, Double) => Double = _ - _
-  }
-
-  case class Multiplication(lhs: Expr, rhs: Expr) extends BinOp {
-    val evaluatedOp: EvaluatedOp = EvaluatedMultiplication
-  }
-  case object EvaluatedMultiplication extends EvaluatedOp {
-    override val op: (Double, Double) => Double = _ * _
-  }
-
-  case class Division(lhs: Expr, rhs: Expr) extends BinOp {
-    val evaluatedOp: EvaluatedOp = EvaluatedDivision
-  }
-  case object EvaluatedDivision extends EvaluatedOp {
-    override val op: (Double, Double) => Double = _ / _
-  }
+  case class Addition(lhs: Expr, rhs: Expr)       extends BinOp
+  case class Subtraction(lhs: Expr, rhs: Expr)    extends BinOp
+  case class Multiplication(lhs: Expr, rhs: Expr) extends BinOp
+  case class Division(lhs: Expr, rhs: Expr)       extends BinOp
 
 }
 

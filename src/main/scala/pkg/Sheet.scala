@@ -2,7 +2,7 @@ package pkg
 
 import com.github.plokhotnyuk.jsoniter_scala.core.writeToString
 import pkg.CalcParser.parseExpression
-import pkg.Model.{DbKey, DbValue}
+import pkg.Model.{BackwardPass, DbKey, DbValue, ForwardPass, Pass}
 import pkg.StringUtils.normalizeFormula
 
 import java.nio.charset.StandardCharsets.UTF_8
@@ -53,8 +53,10 @@ class SheetImpl(val sheetId: String, db: Option[Db]) extends Sheet with CellEval
   }
 
   /** Performance characteristics:
-   * write complexity: tree traversals for re-evaluation are log(n) on average and n in the worst case
-   * read complexity: 1
+   *   - write complexity: tree traversals are N+M
+   *     - where N is the number of cells using this cell recursively
+   *     - and M is the number of cells this cell refers to recursively
+   *   - read complexity: 1
    * 
    * Algorithm description:
    * On adding a cell, the expression is evaluated shallowly since all cells store cached evaluated values
@@ -207,11 +209,11 @@ class SheetImpl(val sheetId: String, db: Option[Db]) extends Sheet with CellEval
     }
 
   private def hasCircularDeps(cell: Cell, newlyReferencedCells: Set[Cell]): Boolean = {
-    val buffer: mutable.ArrayDeque[Cell]    = mutable.ArrayDeque.from(newlyReferencedCells)
-    val traversed: mutable.ArrayDeque[Cell] = mutable.ArrayDeque()
+    val stack: mutable.Stack[Cell]           = mutable.Stack.from(newlyReferencedCells)
+    val traversed: mutable.ArrayBuffer[Cell] = mutable.ArrayBuffer()
 
-    while (buffer.nonEmpty) {
-      val cell2 = buffer.removeLast()
+    while (stack.nonEmpty) {
+      val cell2 = stack.pop()
       if (cell == cell2) {
         traversed.foreach(_.value.traversed = false)
         return true
@@ -219,9 +221,9 @@ class SheetImpl(val sheetId: String, db: Option[Db]) extends Sheet with CellEval
         if (!cell2.value.traversed) {
           cell2.value.traversed = true
           traversed.append(cell2)
-          cell2.value.bottomCells.foreach { cell3 =>
-            if (!cell3.value.traversed)
-              buffer.append(cell3)
+          cell2.value.bottomCells.foreach { bottomCell =>
+            if (!bottomCell.value.traversed)
+              stack.push(bottomCell)
           }
         }
       }
@@ -232,9 +234,9 @@ class SheetImpl(val sheetId: String, db: Option[Db]) extends Sheet with CellEval
 
   /** @return true on success, false otherwise */
   private def reevaluateTopCells(cell: Cell): Boolean = {
-    val topCells: mutable.ArrayDeque[Cell] = allTopCellsTopologicallySorted(cell)
-    var i                                  = 0
-    var evaluationFailed                   = false
+    val topCells: IndexedSeq[Cell] = allTopCellsTopologicallySorted(cell)
+    var i                          = 0
+    var evaluationFailed           = false
     while (i < topCells.size && !evaluationFailed) {
       topCells(i).value.parsed.evaluate()(cellEvaluator = this) match {
         case Some(evaluatedResult) =>
@@ -255,28 +257,29 @@ class SheetImpl(val sheetId: String, db: Option[Db]) extends Sheet with CellEval
   /** Observation: iterative topological sorting is a few times faster than construction of the tree from scratch, but
    * recursive topological sorting is a few times slower
    * @return All top cells sorted such that no cell mentions in its topCells set any of the subsequent cells */
-  private[pkg] def allTopCellsTopologicallySorted(cell: Cell): mutable.ArrayDeque[Cell] = {
-    val sorted: mutable.ArrayDeque[Cell]            = mutable.ArrayDeque()
-    val buffer: mutable.ArrayDeque[(Cell, Boolean)] = mutable.ArrayDeque.from(cell.value.topCells.map(_ -> false))
+  private[pkg] def allTopCellsTopologicallySorted(cell: Cell): IndexedSeq[Cell] = {
+    val sorted: mutable.ArrayDeque[Cell]   = mutable.ArrayDeque()
+    val stack: mutable.Stack[(Cell, Pass)] = mutable.Stack.from(cell.value.topCells.map(_ -> ForwardPass))
 
-    while (buffer.nonEmpty) {
-      val (cell: Cell, traversed: Boolean) = buffer.removeLast()
-      if (traversed) {
-        sorted.prepend(cell)
-      } else {
-        if (!cell.value.traversed) {
-          cell.value.traversed = true
-          buffer.append((cell, true))
-          cell.value.topCells.foreach { cell2 =>
-            if (!cell2.value.traversed) {
-              buffer.append((cell2, false))
+    while (stack.nonEmpty) {
+      val (cell, traversed) = stack.pop()
+      traversed match {
+        case ForwardPass =>
+          if (!cell.value.traversed) {
+            cell.value.traversed = true
+            stack.push((cell, BackwardPass))
+            cell.value.topCells.foreach { topCell =>
+              if (!topCell.value.traversed) {
+                stack.push((topCell, ForwardPass))
+              }
             }
           }
-        }
+        case BackwardPass =>
+          sorted.prepend(cell)
       }
     }
     sorted.foreach(_.value.traversed = false)
-    sorted
+    sorted.toIndexedSeq
   }
 
   /** @return Some if the cell exists, None otherwise */

@@ -2,12 +2,13 @@ package pkg
 
 import com.github.plokhotnyuk.jsoniter_scala.core.readFromString
 import org.slf4j.{Logger, LoggerFactory}
-import pkg.CalcParser.{parseExpression, Expr}
-import pkg.Model.{DbItemParsed, DbKey, DbValue}
+import pkg.CalcParser.{Expr, parseExpression}
+import pkg.Model.{BackwardPass, DbItemParsed, DbKey, DbValue, ForwardPass, Pass}
 import pkg.StringUtils.{normalizeFormula, normalizeId}
 
 import java.nio.charset.StandardCharsets.UTF_8
 import java.util.concurrent.ConcurrentHashMap
+import scala.collection.immutable.ArraySeq
 import scala.collection.mutable
 import scala.util.{Failure, Success, Try, Using}
 
@@ -21,11 +22,11 @@ class Service(db: Option[Db]) {
     // Restore the state from the database
     loadDbItems(db) match {
       case Success(sheetItems) =>
-        val sheetItemsMap: Map[String, mutable.ArrayDeque[DbItemParsed]] = sheetItems.groupMap(_._1)(_._2)
+        val sheetItemsMap: Map[String, Seq[DbItemParsed]] = sheetItems.groupMap(_._1)(_._2)
         sheetItemsMap.foreach { case (sheetId, items) =>
           sheets.put(sheetId, new SheetImpl(sheetId, Some(db)))
           val itemsMap: Map[String, DbItemParsed] = items.groupMapReduce(_.cellId)(identity)((a, _) => a)
-          val sorted                              = allItemsTopologicallySorted(itemsMap)
+          val sorted: IndexedSeq[DbItemParsed]           = allItemsTopologicallySorted(itemsMap)
           sorted.reverseIterator.foreach { item =>
             if (putCell(sheetId, item.cellId, item.value).isEmpty) {
               logger.warn(s"Couldn't restore a value for cell ${item.cellId}")
@@ -33,14 +34,14 @@ class Service(db: Option[Db]) {
           }
         }
       case Failure(e) =>
-        logger.warn("Couldn't load data from DB")
+        logger.warn("Couldn't load data from DB", e)
     }
   }
 
-  private def loadDbItems(db: Db): Try[mutable.ArrayDeque[(String, DbItemParsed)]] = {
+  private def loadDbItems(db: Db): Try[Seq[(String, DbItemParsed)]] = {
     Using(db.db.newIterator()) { iterator =>
       iterator.seekToFirst()
-      val sheetItems: mutable.ArrayDeque[(String, DbItemParsed)] = mutable.ArrayDeque()
+      val sheetItems = ArraySeq.newBuilder[(String, DbItemParsed)]
       while (iterator.isValid) {
         val key     = new String(iterator.key, UTF_8)
         val dbKey   = readFromString[DbKey](key)
@@ -59,38 +60,39 @@ class Service(db: Option[Db]) {
           referencedVariables,
           traversed = false
         )
-        sheetItems.append((dbKey.sheetId, dbItemParsed))
+        sheetItems += (dbKey.sheetId -> dbItemParsed)
         iterator.next()
       }
-      sheetItems
+      sheetItems.result()
     }
   }
 
   private def allItemsTopologicallySorted(
       itemsMap: Map[String, DbItemParsed]
-  ): mutable.ArrayDeque[DbItemParsed] = {
-    val sorted: mutable.ArrayDeque[DbItemParsed]            = mutable.ArrayDeque()
-    val buffer: mutable.ArrayDeque[(DbItemParsed, Boolean)] = mutable.ArrayDeque.from(itemsMap.values.map(_ -> false))
+  ): IndexedSeq[DbItemParsed] = {
+    val sorted                                     = mutable.ArrayDeque[DbItemParsed]()
+    val stack: mutable.Stack[(DbItemParsed, Pass)] = mutable.Stack.from(itemsMap.values.map(_ -> ForwardPass))
 
-    while (buffer.nonEmpty) {
-      val (item: DbItemParsed, traversed: Boolean) = buffer.removeLast()
-      if (traversed) {
-        sorted.prepend(item)
-      } else {
-        if (!item.traversed) {
-          item.traversed = true
-          buffer.append((item, true))
-          item.referencedVariables.foreach { item2name =>
-            val item2 = itemsMap(item2name)
-            if (!item2.traversed) {
-              buffer.append((item2, false))
+    while (stack.nonEmpty) {
+      val (item, pass) = stack.pop()
+      pass match {
+        case ForwardPass =>
+          if (!item.traversed) {
+            item.traversed = true
+            stack.push((item, BackwardPass))
+            item.referencedVariables.foreach { referencedItemName =>
+              val referencedItem = itemsMap(referencedItemName)
+              if (!referencedItem.traversed) {
+                stack.push((referencedItem, ForwardPass))
+              }
             }
           }
-        }
+        case BackwardPass =>
+          sorted.prepend(item)
       }
     }
     sorted.foreach(_.traversed = false)
-    sorted
+    sorted.toIndexedSeq
   }
 
   def putCell(sheetId: String, cellId: String, sourceValue: String): Option[Either[String, Double]] = {

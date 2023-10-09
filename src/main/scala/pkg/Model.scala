@@ -30,4 +30,8 @@ object Model {
   implicit val DbKeyCodec: JsonValueCodec[DbKey]     = JsonCodecMaker.make
   implicit val DbValueCodec: JsonValueCodec[DbValue] = JsonCodecMaker.make
 
+  sealed trait Pass
+  case object ForwardPass  extends Pass
+  case object BackwardPass extends Pass
+
 }
