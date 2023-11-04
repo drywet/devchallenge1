@@ -152,6 +152,7 @@ class SheetImpl(val sheetId: String, db: Option[Db]) extends Sheet with CellEval
   ): Option[(CellValueParsed, Either[String, Double])] = {
     if (sourceValue.startsWith("=")) {
       normalizeFormula(sourceValue.drop(1)).flatMap { formula =>
+        // println(s"formula: $formula")
         parseExpression(id, formula).flatMap { expr =>
           val evaluatedResult = CalcParser.evaluate(expr)(cellEvaluator = this)
           evaluatedResult.map(evaluatedResult => CellValueExpr(expr) -> evaluatedResult)

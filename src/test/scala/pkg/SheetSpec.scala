@@ -192,6 +192,30 @@ class SheetSpec extends AnyFlatSpec with should.Matchers with BeforeAndAfterAll 
     sheet.putCellValue("a2", s"=a1/0") shouldEqual None
   }
 
+  it should "check agg functions" in {
+    val sheet = new SheetImpl(sheet1, db)
+    sheet.putCellValue("a_1", s"=-1") shouldEqual Some(Right(-1))
+    sheet.putCellValue("a0", s"=0") shouldEqual Some(Right(0))
+    sheet.putCellValue("a1", s"=1") shouldEqual Some(Right(1))
+    sheet.putCellValue("a2", s"=2") shouldEqual Some(Right(2))
+    sheet.putCellValue("a3", s"=a2+1") shouldEqual Some(Right(3))
+    sheet.putCellValue("a4", s"=sum(a0)") shouldEqual Some(Right(0))
+    sheet.putCellValue("a4", s"=SUM(a0)") shouldEqual Some(Right(0))
+    sheet.putCellValue("a4", s"=SUM(a1)") shouldEqual Some(Right(1))
+    sheet.putCellValue("a4", s"=SUM(a0, a1, a2, a3)") shouldEqual Some(Right(6))
+    sheet.putCellValue("a4", s"=  SUM(  a0,  a1,  a2,  a3  )  ") shouldEqual Some(Right(6))
+    sheet.putCellValue("a4", s"=SUM(a0,a1,a2,a3)") shouldEqual Some(Right(6))
+    sheet.putCellValue("a4", s"=SUM(a0,)") shouldEqual None
+    sheet.putCellValue("a4", s"=SUM(,)") shouldEqual None
+    sheet.putCellValue("a4", s"=SUM()") shouldEqual None
+    sheet.putCellValue("a4", s"=AVG(a0, a1, a2, a3)") shouldEqual Some(Right(6.0 / 4))
+    sheet.putCellValue("a4", s"=MIN(a0, a1, a2, a3)") shouldEqual Some(Right(0))
+    sheet.putCellValue("a4", s"=MIN(a_1, a0, a1, a2, a3)") shouldEqual Some(Right(-1))
+    sheet.putCellValue("a4", s"=MAX(a0, a1, a2, a3)") shouldEqual Some(Right(3))
+    sheet.putCellValue("a4", s"=MAX(a0, a3, a1, a2)") shouldEqual Some(Right(3))
+    sheet.putCellValue("a4", s"=MAX(1, 0, 2, -1, 1)") shouldEqual Some(Right(2))
+  }
+
   it should "check a long formula" in {
     val sheet: SheetImpl = new SheetImpl(sheet1, db)
     val n                = 1e6.toInt

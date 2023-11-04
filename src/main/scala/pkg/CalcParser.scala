@@ -12,7 +12,7 @@ import scala.util.{Failure, Success}
  * Extended with support for float numbers and variables */
 object CalcParser {
 
-  private val debug: Boolean = false
+  private val debug: Boolean = true // TODO 1
 
   private val logger: Logger = LoggerFactory.getLogger(this.getClass)
 
@@ -23,14 +23,12 @@ object CalcParser {
   // https://jrgraphix.net/r/Unicode
   private val AlphaExtended: CharPredicate = CharPredicate(
     ('\u0000' to '\u0027') ++
-      ('\u002c' to '\u002c') ++
       ('\u002e' to '\u002e') ++
       ('\u003a' to '\uffef')
   )
   // All except arithmetic ops
   private val AlphaExtendedNumeric: CharPredicate = CharPredicate(
     ('\u0000' to '\u0027') ++
-      ('\u002c' to '\u002c') ++
       ('\u002e' to '\u002e') ++
       ('\u0030' to '\uffef')
   )
@@ -62,6 +60,7 @@ object CalcParser {
               valueStack.push(v.toDoubleOption)
             case (VariableValue(name), ForwardPass) =>
               valueStack.push(cellEvaluator.getEvaluatedCellValue(name).flatMap(valueToNumber))
+
             case (op: BinOp, ForwardPass) =>
               stack.push(op     -> BackwardPass)
               stack.push(op.lhs -> ForwardPass)
@@ -73,6 +72,26 @@ object CalcParser {
                 res <- evaluateOp(op, a, b)
               } yield res
               valueStack.push(res)
+
+            case (op: AggFunc, ForwardPass) =>
+              stack.push(op -> BackwardPass)
+              op.args.all.foreach(arg => stack.push(arg -> ForwardPass))
+            // println(s"stack: $stack")
+            case (op: AggFunc, BackwardPass) =>
+              val args: Option[List[Double]] =
+                op.args.all.indices.foldLeft[Option[List[Double]]](Some(List.empty[Double]))((acc, _) =>
+                  (acc, valueStack.pop()) match {
+                    case (Some(acc), Some(value)) => Some(value +: acc)
+                    case _                        => None
+                  }
+                )
+              // println(s"args: $args")
+              val res = args match {
+                case Some(args) => evaluateAggFunc(op, args)
+                case None       => None
+              }
+              valueStack.push(res)
+
             case x =>
               throw new IllegalStateException(s"evaluate() stack.pop() returned '$x'")
           }
@@ -95,6 +114,17 @@ object CalcParser {
     case _: Division           => None
   }
 
+  private def evaluateAggFunc(op: AggFunc, args: Seq[Double]): Option[Double] = {
+    if (args.nonEmpty)
+      Some(op match {
+        case _: SumFuncCall => args.sum
+        case _: AvgFuncCall => args.sum / args.size
+        case _: MinFuncCall => args.min
+        case _: MaxFuncCall => args.max
+      })
+    else None
+  }
+
   def referencedVariables(expr: Expr): Set[String] = {
     val variables: mutable.Builder[String, Set[String]] = Set.newBuilder[String]
     val stack: mutable.Stack[Expr]                      = mutable.Stack(expr)
@@ -108,6 +138,7 @@ object CalcParser {
         case Subtraction(a, b)    => stack.append(a); stack.append(b)
         case Multiplication(a, b) => stack.append(a); stack.append(b)
         case Division(a, b)       => stack.append(a); stack.append(b)
+        case x: AggFunc           => stack.appendAll(x.args.all)
       }
     }
 
@@ -140,8 +171,10 @@ object CalcParser {
   case class MinFuncCall(args: OneOrMoreArgsList) extends AggFunc
   case class MaxFuncCall(args: OneOrMoreArgsList) extends AggFunc
 
-  case class OneOrMoreArgsList(arg1: Expr, extraArgs: ExtraArgsList) extends Func
-  case class ExtraArgsList(args: Seq[Expr])                          extends Func
+  case class OneOrMoreArgsList(arg1: Expr, extraArgs: ExtraArgsList) extends Func {
+    val all: Seq[Expr] = arg1 +: extraArgs.args
+  }
+  case class ExtraArgsList(args: Seq[Expr]) extends Func
 
 }
 
@@ -170,17 +203,16 @@ class CalcParser(val input: ParserInput) extends Parser {
       )
     }
 
-  private def Factor: Rule1[Expr] = rule(Number | Variable | Parens | Func)
+  private def Factor: Rule1[Expr] = rule(Func | Number | Variable | Parens)
 
   private def Parens: Rule1[Expr] = rule('(' ~ Expression ~ ')')
 
-  // TODO is it whitespace-insensitive in putCellValue?
   private def Func: Rule1[Func] = rule(SumFunc | AvgFunc | MinFunc | MaxFunc)
 
-  private def SumFunc: Rule1[SumFuncCall] = rule("sum(" ~ OneOrMoreArgs ~ ')' ~> SumFuncCall.apply _)
-  private def AvgFunc: Rule1[AvgFuncCall] = rule("avg(" ~ OneOrMoreArgs ~ ')' ~> AvgFuncCall.apply _)
-  private def MinFunc: Rule1[MinFuncCall] = rule("min(" ~ OneOrMoreArgs ~ ')' ~> MinFuncCall.apply _)
-  private def MaxFunc: Rule1[MaxFuncCall] = rule("max(" ~ OneOrMoreArgs ~ ')' ~> MaxFuncCall.apply _)
+  private def SumFunc: Rule1[SumFuncCall] = rule(ignoreCase("sum(") ~ OneOrMoreArgs ~ ')' ~> SumFuncCall.apply _)
+  private def AvgFunc: Rule1[AvgFuncCall] = rule(ignoreCase("avg(") ~ OneOrMoreArgs ~ ')' ~> AvgFuncCall.apply _)
+  private def MinFunc: Rule1[MinFuncCall] = rule(ignoreCase("min(") ~ OneOrMoreArgs ~ ')' ~> MinFuncCall.apply _)
+  private def MaxFunc: Rule1[MaxFuncCall] = rule(ignoreCase("max(") ~ OneOrMoreArgs ~ ')' ~> MaxFuncCall.apply _)
 
   private def OneOrMoreArgs: Rule1[OneOrMoreArgsList] = rule(Expression ~ ExtraArgs ~> OneOrMoreArgsList.apply _)
 

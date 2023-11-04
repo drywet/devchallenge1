@@ -5,7 +5,7 @@ import scala.util.matching.Regex
 object StringUtils {
 
   private val whitespaceRegex: Regex = """\s+""".r
-  private val operators              = Set('+', '-', '*', '/', '(', ')')
+  private val operators              = Set('+', '-', '*', '/', '(', ')', ',')
 
   /** Remove whitespace making sure no adjacent numbers or variables would join together */
   def normalizeFormula(expr: String): Option[String] = {
