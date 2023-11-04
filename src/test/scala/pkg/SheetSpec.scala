@@ -184,6 +184,14 @@ class SheetSpec extends AnyFlatSpec with should.Matchers with BeforeAndAfterAll 
     CalcParser.evaluate(expr)(sheet) shouldEqual Some(Right(-3))
   }
 
+  it should "error on division by zero" in {
+    val sheet = new SheetImpl(sheet1, db)
+    sheet.putCellValue("a0", s"=0") shouldEqual Some(Right(0))
+    sheet.putCellValue("a1", s"=1") shouldEqual Some(Right(1))
+    sheet.putCellValue("a2", s"=a1/a0") shouldEqual None
+    sheet.putCellValue("a2", s"=a1/0") shouldEqual None
+  }
+
   it should "check a long formula" in {
     val sheet: SheetImpl = new SheetImpl(sheet1, db)
     val n                = 1e6.toInt

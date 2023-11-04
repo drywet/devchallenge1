@@ -67,9 +67,10 @@ object CalcParser {
               stack.push(op.rhs -> ForwardPass)
             case (op: BinOp, BackwardPass) =>
               val res = for {
-                a <- valueStack.pop()
-                b <- valueStack.pop()
-              } yield evaluateOp(op, a, b)
+                a   <- valueStack.pop()
+                b   <- valueStack.pop()
+                res <- evaluateOp(op, a, b)
+              } yield res
               valueStack.push(res)
           }
         }
@@ -83,11 +84,12 @@ object CalcParser {
     case _                            => None
   }
 
-  private def evaluateOp(op: BinOp, a: Double, b: Double) = op match {
-    case _: Addition       => a + b
-    case _: Subtraction    => a - b
-    case _: Multiplication => a * b
-    case _: Division       => a / b
+  private def evaluateOp(op: BinOp, a: Double, b: Double): Option[Double] = op match {
+    case _: Addition           => Some(a + b)
+    case _: Subtraction        => Some(a - b)
+    case _: Multiplication     => Some(a * b)
+    case _: Division if b != 0 => Some(a / b)
+    case _: Division           => None
   }
 
   def referencedVariables(expr: Expr): Set[String] = {
