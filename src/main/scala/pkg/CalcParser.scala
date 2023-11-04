@@ -58,7 +58,8 @@ object CalcParser {
         val valueStack = mutable.Stack[Option[Double]]()
         while (stack.nonEmpty) {
           stack.pop() match {
-            case (NumberValue(v), ForwardPass) => valueStack.push(v.toDoubleOption)
+            case (NumberValue(v), ForwardPass) =>
+              valueStack.push(v.toDoubleOption)
             case (VariableValue(name), ForwardPass) =>
               valueStack.push(cellEvaluator.getEvaluatedCellValue(name).flatMap(valueToNumber))
             case (op: BinOp, ForwardPass) =>
@@ -72,6 +73,8 @@ object CalcParser {
                 res <- evaluateOp(op, a, b)
               } yield res
               valueStack.push(res)
+            case x =>
+              throw new IllegalStateException(s"evaluate() stack.pop() returned '$x'")
           }
         }
         valueStack.top.map(Right(_))
@@ -119,6 +122,11 @@ object CalcParser {
     def rhs: Expr
   }
 
+  sealed trait Func extends Expr
+  sealed trait AggFunc extends Func {
+    def args: OneOrMoreArgsList
+  }
+
   case class NumberValue(value: String)  extends Expr
   case class VariableValue(name: String) extends Expr
 
@@ -126,6 +134,14 @@ object CalcParser {
   case class Subtraction(lhs: Expr, rhs: Expr)    extends BinOp
   case class Multiplication(lhs: Expr, rhs: Expr) extends BinOp
   case class Division(lhs: Expr, rhs: Expr)       extends BinOp
+
+  case class SumFuncCall(args: OneOrMoreArgsList) extends AggFunc
+  case class AvgFuncCall(args: OneOrMoreArgsList) extends AggFunc
+  case class MinFuncCall(args: OneOrMoreArgsList) extends AggFunc
+  case class MaxFuncCall(args: OneOrMoreArgsList) extends AggFunc
+
+  case class OneOrMoreArgsList(arg1: Expr, extraArgs: ExtraArgsList) extends Func
+  case class ExtraArgsList(args: Seq[Expr])                          extends Func
 
 }
 
@@ -154,9 +170,21 @@ class CalcParser(val input: ParserInput) extends Parser {
       )
     }
 
-  private def Factor: Rule1[Expr] = rule(Number | Variable | Parens)
+  private def Factor: Rule1[Expr] = rule(Number | Variable | Parens | Func)
 
   private def Parens: Rule1[Expr] = rule('(' ~ Expression ~ ')')
+
+  // TODO is it whitespace-insensitive in putCellValue?
+  private def Func: Rule1[Func] = rule(SumFunc | AvgFunc | MinFunc | MaxFunc)
+
+  private def SumFunc: Rule1[SumFuncCall] = rule("sum(" ~ OneOrMoreArgs ~ ')' ~> SumFuncCall.apply _)
+  private def AvgFunc: Rule1[AvgFuncCall] = rule("avg(" ~ OneOrMoreArgs ~ ')' ~> AvgFuncCall.apply _)
+  private def MinFunc: Rule1[MinFuncCall] = rule("min(" ~ OneOrMoreArgs ~ ')' ~> MinFuncCall.apply _)
+  private def MaxFunc: Rule1[MaxFuncCall] = rule("max(" ~ OneOrMoreArgs ~ ')' ~> MaxFuncCall.apply _)
+
+  private def OneOrMoreArgs: Rule1[OneOrMoreArgsList] = rule(Expression ~ ExtraArgs ~> OneOrMoreArgsList.apply _)
+
+  private def ExtraArgs: Rule1[ExtraArgsList] = rule(zeroOrMore(',' ~ Expression) ~> ExtraArgsList.apply _)
 
   private def Number: Rule1[NumberValue] = rule(capture(Float) ~> NumberValue.apply _)
 
