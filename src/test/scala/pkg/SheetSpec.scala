@@ -32,26 +32,26 @@ class SheetSpec extends AnyFlatSpec with should.Matchers with BeforeAndAfterAll 
     sheet.getCellValue("a1") shouldEqual None
     sheet.getCellValue("1") shouldEqual None
     sheet.getCellValue("1") shouldEqual None
-    sheet.putCellValue("a1", "1") shouldEqual Some(Right(1))
+    sheet.putCellValue("a1", "1") shouldEqual Some((Right(1), Seq.empty))
     sheet.getCellValue("a1") shouldEqual Some(("1", Right(1)))
-    sheet.putCellValue("a2", "=a1+1") shouldEqual Some(Right(2))
-    sheet.putCellValue("a1", "3") shouldEqual Some(Right(3))
+    sheet.putCellValue("a2", "=a1+1") shouldEqual Some((Right(2), Seq.empty))
+    sheet.putCellValue("a1", "3") shouldEqual Some((Right(3), Seq.empty))
     sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(4)))
 
     sheet.putCellValue("a1", "=a2") shouldEqual None
     sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(4)))
-    sheet.putCellValue("a1", "5") shouldEqual Some(Right(5))
+    sheet.putCellValue("a1", "5") shouldEqual Some((Right(5), Seq.empty))
     sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(6)))
 
     // An empty existing cell is coerced to 0
-    sheet.putCellValue("a1", "") shouldEqual Some(Left(""))
+    sheet.putCellValue("a1", "") shouldEqual Some((Left(""), Seq.empty))
     sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(1)))
 
     // A cell with just whitespace isn't coerced to 0
-    sheet.putCellValue("a4", " ") shouldEqual Some(Left(" "))
+    sheet.putCellValue("a4", " ") shouldEqual Some((Left(" "), Seq.empty))
     sheet.putCellValue("a5", "=a4+1") shouldEqual None
-    sheet.putCellValue("a5", "=a4") shouldEqual Some(Left(" "))
-    sheet.putCellValue("a6", "=a5") shouldEqual Some(Left(" "))
+    sheet.putCellValue("a5", "=a4") shouldEqual Some((Left(" "), Seq.empty))
+    sheet.putCellValue("a6", "=a5") shouldEqual Some((Left(" "), Seq.empty))
 
     sheet.putCellValue("a1", "=a3") shouldEqual None
     sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(1)))
@@ -62,19 +62,19 @@ class SheetSpec extends AnyFlatSpec with should.Matchers with BeforeAndAfterAll 
     sheet.getCellValue("a1") shouldEqual Some(("", Left("")))
     sheet.getCellValue("a2") shouldEqual Some(("=a1+1", Right(1)))
 
-    sheet.putCellValue("a1", "=((123+456*(2+-1))+789)/0.1") shouldEqual Some(Right(13680))
+    sheet.putCellValue("a1", "=((123+456*(2+-1))+789)/0.1") shouldEqual Some((Right(13680), Seq.empty))
     sheet.putCellValue("a1", "=123e-4   +   56e7 + 8.9e10 + .12e+3 + 4e5 + 6e0") shouldEqual
-    Some(Right(8.95604001260123e10))
-    sheet.putCellValue("a1", "1e150") shouldEqual Some(Right(1.0e150))
-    sheet.putCellValue("a1", "=1e150") shouldEqual Some(Right(1.0e150))
+    Some((Right(8.95604001260123e10), Seq.empty))
+    sheet.putCellValue("a1", "1e150") shouldEqual Some((Right(1.0e150), Seq.empty))
+    sheet.putCellValue("a1", "=1e150") shouldEqual Some((Right(1.0e150), Seq.empty))
 
     // One or both sides of whitespace should be operators
     sheet.putCellValue("a1", "=123 456") shouldEqual None
     sheet.putCellValue("a3", "=a1 a2") shouldEqual None
 
-    sheet.putCellValue("a2", "a2") shouldEqual Some(Left("a2"))
+    sheet.putCellValue("a2", "a2") shouldEqual Some((Left("a2"), Seq.empty))
     sheet.getCellValue("a2") shouldEqual Some("a2", Left("a2"))
-    sheet.putCellValue("a1", "=a2") shouldEqual Some(Left("a2"))
+    sheet.putCellValue("a1", "=a2") shouldEqual Some((Left("a2"), Seq.empty))
     sheet.getCellValue("a1") shouldEqual Some("=a2", Left("a2"))
 
     an[IllegalArgumentException] shouldBe thrownBy {
@@ -93,16 +93,16 @@ class SheetSpec extends AnyFlatSpec with should.Matchers with BeforeAndAfterAll 
 
   it should "check topological sorting" in {
     val sheet: SheetImpl = new SheetImpl(sheet1, db)
-    sheet.putCellValue("a", "1") shouldEqual Some(Right(1))
-    sheet.putCellValue("b", "=a+1") shouldEqual Some(Right(2))
-    sheet.putCellValue("c", "=b+a") shouldEqual Some(Right(3))
-    sheet.putCellValue("d", "=c+b+1") shouldEqual Some(Right(6))
-    sheet.putCellValue("e", "=c+d+1") shouldEqual Some(Right(10))
+    sheet.putCellValue("a", "1") shouldEqual Some((Right(1), Seq.empty))
+    sheet.putCellValue("b", "=a+1") shouldEqual Some((Right(2), Seq.empty))
+    sheet.putCellValue("c", "=b+a") shouldEqual Some((Right(3), Seq.empty))
+    sheet.putCellValue("d", "=c+b+1") shouldEqual Some((Right(6), Seq.empty))
+    sheet.putCellValue("e", "=c+d+1") shouldEqual Some((Right(10), Seq.empty))
 
     sheet.putCellValue("c", "=d") shouldEqual None
     sheet.putCellValue("a", "=e") shouldEqual None
 
-    sheet.putCellValue("c", "=b+10") shouldEqual Some(Right(12))
+    sheet.putCellValue("c", "=b+10") shouldEqual Some((Right(12), Seq.empty))
 
     sheet.allTopCellsTopologicallySorted(sheet.getCell("c").get).map(_.name) shouldEqual Seq("d", "e")
     sheet.allTopCellsTopologicallySorted(sheet.getCell("e").get).map(_.name) shouldEqual Seq.empty
@@ -114,8 +114,8 @@ class SheetSpec extends AnyFlatSpec with should.Matchers with BeforeAndAfterAll 
     sheet.getCellValue("d") shouldEqual Some(("=c+b+1", Right(15)))
     sheet.getCellValue("e") shouldEqual Some(("=c+d+1", Right(28)))
 
-    sheet.putCellValue("f", "=c+10") shouldEqual Some(Right(22))
-    sheet.putCellValue("g", "=f+1") shouldEqual Some(Right(23))
+    sheet.putCellValue("f", "=c+10") shouldEqual Some((Right(22), Seq.empty))
+    sheet.putCellValue("g", "=f+1") shouldEqual Some((Right(23), Seq.empty))
 
     val sorted1 = sheet.allTopCellsTopologicallySorted(sheet.getCell("a").get).map(_.name)
     sorted1.indexOf("b") should be < sorted1.indexOf("c")
@@ -136,7 +136,7 @@ class SheetSpec extends AnyFlatSpec with should.Matchers with BeforeAndAfterAll 
     sheet.getCellValue("f") shouldEqual Some(("=c+10", Right(22)))
     sheet.getCellValue("g") shouldEqual Some(("=f+1", Right(23)))
 
-    sheet.putCellValue("b", "=a+2") shouldEqual Some(Right(3))
+    sheet.putCellValue("b", "=a+2") shouldEqual Some((Right(3), Seq.empty))
 
     sheet.getCellValue("a") shouldEqual Some(("1", Right(1)))
     sheet.getCellValue("b") shouldEqual Some(("=a+2", Right(3)))
@@ -146,25 +146,25 @@ class SheetSpec extends AnyFlatSpec with should.Matchers with BeforeAndAfterAll 
     sheet.getCellValue("f") shouldEqual Some(("=c+10", Right(23)))
     sheet.getCellValue("g") shouldEqual Some(("=f+1", Right(24)))
 
-    sheet.putCellValue("g", "=f+d+1") shouldEqual Some(Right(41))
+    sheet.putCellValue("g", "=f+d+1") shouldEqual Some((Right(41), Seq.empty))
   }
 
   it should "check a long formula chain" in {
     val sheet: SheetImpl = new SheetImpl(sheet1, db)
-    sheet.putCellValue("a1", "1") shouldEqual Some(Right(1))
+    sheet.putCellValue("a1", "1") shouldEqual Some((Right(1), Seq.empty))
     val n = 1e6.toInt
     time1("Create a long formula chain")(
-      (2 to n).foreach(i => sheet.putCellValue(s"a$i", s"=a${i - 1}+1") shouldEqual Some(Right(i)))
+      (2 to n).foreach(i => sheet.putCellValue(s"a$i", s"=a${i - 1}+1") shouldEqual Some(Right(i), Seq.empty))
     )
     time1("Update the top value")(
-      sheet.putCellValue(s"a$n", s"=a${n - 2}+3") shouldEqual Some(Right(n + 1))
+      sheet.putCellValue(s"a$n", s"=a${n - 2}+3") shouldEqual Some((Right(n + 1), Seq.empty))
     )
     time1("Update the bottom value")(
-      sheet.putCellValue(s"a1", s"=2") shouldEqual Some(Right(2))
+      sheet.putCellValue(s"a1", s"=2") shouldEqual Some((Right(2), Seq.empty))
     )
     sheet.getCellValue(s"a${n / 2}") shouldEqual Some(s"=a${n / 2 - 1}+1", Right(n / 2 + 1))
     time1("Update a value in the middle")(
-      sheet.putCellValue(s"a${n / 2}", s"=a${n / 2 - 2}+3") shouldEqual Some(Right(n / 2 + 2))
+      sheet.putCellValue(s"a${n / 2}", s"=a${n / 2 - 2}+3") shouldEqual Some((Right(n / 2 + 2), Seq.empty))
     )
     sheet.getCellValue(s"a$n") shouldEqual Some(s"=a${n - 2}+3", Right(n + 3))
   }
@@ -186,34 +186,34 @@ class SheetSpec extends AnyFlatSpec with should.Matchers with BeforeAndAfterAll 
 
   it should "error on division by zero" in {
     val sheet = new SheetImpl(sheet1, db)
-    sheet.putCellValue("a0", s"=0") shouldEqual Some(Right(0))
-    sheet.putCellValue("a1", s"=1") shouldEqual Some(Right(1))
+    sheet.putCellValue("a0", s"=0") shouldEqual Some((Right(0), Seq.empty))
+    sheet.putCellValue("a1", s"=1") shouldEqual Some((Right(1), Seq.empty))
     sheet.putCellValue("a2", s"=a1/a0") shouldEqual None
     sheet.putCellValue("a2", s"=a1/0") shouldEqual None
   }
 
   it should "check agg functions" in {
     val sheet = new SheetImpl(sheet1, db)
-    sheet.putCellValue("a_1", s"=-1") shouldEqual Some(Right(-1))
-    sheet.putCellValue("a0", s"=0") shouldEqual Some(Right(0))
-    sheet.putCellValue("a1", s"=1") shouldEqual Some(Right(1))
-    sheet.putCellValue("a2", s"=2") shouldEqual Some(Right(2))
-    sheet.putCellValue("a3", s"=a2+1") shouldEqual Some(Right(3))
-    sheet.putCellValue("a4", s"=sum(a0)") shouldEqual Some(Right(0))
-    sheet.putCellValue("a4", s"=SUM(a0)") shouldEqual Some(Right(0))
-    sheet.putCellValue("a4", s"=SUM(a1)") shouldEqual Some(Right(1))
-    sheet.putCellValue("a4", s"=SUM(a0, a1, a2, a3)") shouldEqual Some(Right(6))
-    sheet.putCellValue("a4", s"=  SUM(  a0,  a1,  a2,  a3  )  ") shouldEqual Some(Right(6))
-    sheet.putCellValue("a4", s"=SUM(a0,a1,a2,a3)") shouldEqual Some(Right(6))
+    sheet.putCellValue("a_1", s"=-1") shouldEqual Some((Right(-1), Seq.empty))
+    sheet.putCellValue("a0", s"=0") shouldEqual Some((Right(0), Seq.empty))
+    sheet.putCellValue("a1", s"=1") shouldEqual Some((Right(1), Seq.empty))
+    sheet.putCellValue("a2", s"=2") shouldEqual Some((Right(2), Seq.empty))
+    sheet.putCellValue("a3", s"=a2+1") shouldEqual Some((Right(3), Seq.empty))
+    sheet.putCellValue("a4", s"=sum(a0)") shouldEqual Some((Right(0), Seq.empty))
+    sheet.putCellValue("a4", s"=SUM(a0)") shouldEqual Some((Right(0), Seq.empty))
+    sheet.putCellValue("a4", s"=SUM(a1)") shouldEqual Some((Right(1), Seq.empty))
+    sheet.putCellValue("a4", s"=SUM(a0, a1, a2, a3)") shouldEqual Some((Right(6), Seq.empty))
+    sheet.putCellValue("a4", s"=  SUM(  a0,  a1,  a2,  a3  )  ") shouldEqual Some((Right(6), Seq.empty))
+    sheet.putCellValue("a4", s"=SUM(a0,a1,a2,a3)") shouldEqual Some((Right(6), Seq.empty))
     sheet.putCellValue("a4", s"=SUM(a0,)") shouldEqual None
     sheet.putCellValue("a4", s"=SUM(,)") shouldEqual None
     sheet.putCellValue("a4", s"=SUM()") shouldEqual None
-    sheet.putCellValue("a4", s"=AVG(a0, a1, a2, a3)") shouldEqual Some(Right(6.0 / 4))
-    sheet.putCellValue("a4", s"=MIN(a0, a1, a2, a3)") shouldEqual Some(Right(0))
-    sheet.putCellValue("a4", s"=MIN(a_1, a0, a1, a2, a3)") shouldEqual Some(Right(-1))
-    sheet.putCellValue("a4", s"=MAX(a0, a1, a2, a3)") shouldEqual Some(Right(3))
-    sheet.putCellValue("a4", s"=MAX(a0, a3, a1, a2)") shouldEqual Some(Right(3))
-    sheet.putCellValue("a4", s"=MAX(1, 0, 2, -1, 1)") shouldEqual Some(Right(2))
+    sheet.putCellValue("a4", s"=AVG(a0, a1, a2, a3)") shouldEqual Some((Right(6.0 / 4), Seq.empty))
+    sheet.putCellValue("a4", s"=MIN(a0, a1, a2, a3)") shouldEqual Some((Right(0), Seq.empty))
+    sheet.putCellValue("a4", s"=MIN(a_1, a0, a1, a2, a3)") shouldEqual Some((Right(-1), Seq.empty))
+    sheet.putCellValue("a4", s"=MAX(a0, a1, a2, a3)") shouldEqual Some((Right(3), Seq.empty))
+    sheet.putCellValue("a4", s"=MAX(a0, a3, a1, a2)") shouldEqual Some((Right(3), Seq.empty))
+    sheet.putCellValue("a4", s"=MAX(1, 0, 2, -1, 1)") shouldEqual Some((Right(2), Seq.empty))
   }
 
   it should "check a long formula" in {
@@ -221,7 +221,7 @@ class SheetSpec extends AnyFlatSpec with should.Matchers with BeforeAndAfterAll 
     val n                = 1e6.toInt
     val formula          = "+1" * n
     time1("Calculate a long formula")(
-      sheet.putCellValue("a1", s"=$formula") shouldEqual Some(Right(n))
+      sheet.putCellValue("a1", s"=$formula") shouldEqual Some((Right(n), Seq.empty))
     )
   }
 

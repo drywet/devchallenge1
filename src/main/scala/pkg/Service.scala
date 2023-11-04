@@ -1,10 +1,14 @@
 package pkg
 
-import com.github.plokhotnyuk.jsoniter_scala.core.readFromString
+import com.github.plokhotnyuk.jsoniter_scala.core.{readFromString, writeToString}
+import io.activej.http.HttpHeaderValue.ofContentType
+import io.activej.http.HttpHeaders.CONTENT_TYPE
+import io.activej.http.MediaTypes.JSON
+import io.activej.http.{AsyncHttpClient, ContentType, HttpRequest}
 import org.slf4j.{Logger, LoggerFactory}
 import pkg.CalcParser.{Expr, parseExpression}
-import pkg.Model.{BackwardPass, DbItemParsed, DbKey, DbValue, ForwardPass, Pass}
-import pkg.StringUtils.{normalizeFormula, normalizeId}
+import pkg.Model.{BackwardPass, CellUpdate, DbItemParsed, DbKey, DbValue, ForwardPass, Pass, SubscribeToCellWebhookRequest, evaluatedResultFormat}
+import pkg.StringUtils.{checkUrl, normalizeFormula, normalizeId}
 
 import java.nio.charset.StandardCharsets.UTF_8
 import java.util.concurrent.ConcurrentHashMap
@@ -12,7 +16,7 @@ import scala.collection.immutable.ArraySeq
 import scala.collection.mutable
 import scala.util.{Failure, Success, Try, Using}
 
-class Service(db: Option[Db]) {
+class Service(db: Option[Db], httpClient: AsyncHttpClient) {
 
   private val logger: Logger = LoggerFactory.getLogger(this.getClass)
 
@@ -26,7 +30,7 @@ class Service(db: Option[Db]) {
         sheetItemsMap.foreach { case (sheetId, items) =>
           sheets.put(sheetId, new SheetImpl(sheetId, Some(db)))
           val itemsMap: Map[String, DbItemParsed] = items.groupMapReduce(_.cellId)(identity)((a, _) => a)
-          val sorted: IndexedSeq[DbItemParsed]           = allItemsTopologicallySorted(itemsMap)
+          val sorted: IndexedSeq[DbItemParsed]    = allItemsTopologicallySorted(itemsMap)
           sorted.reverseIterator.foreach { item =>
             if (putCell(sheetId, item.cellId, item.value).isEmpty) {
               logger.warn(s"Couldn't restore a value for cell ${item.cellId}")
@@ -99,9 +103,29 @@ class Service(db: Option[Db]) {
     (normalizeId(sheetId), normalizeId(cellId)) match {
       case (Some(sheetId), Some(cellId)) =>
         val sheet = sheets.computeIfAbsent(sheetId, sheetId => new SheetImpl(sheetId, db))
-        sheet.putCellValue(id = cellId, sourceValue = sourceValue)
+        val result: Option[(Either[String, Double], Seq[Model.CellUpdate])] =
+          sheet.putCellValue(id = cellId, sourceValue = sourceValue)
+        result.map(_._2).foreach(callCellUpdateWebhooks)
+        result.map(_._1)
       case _ =>
         None
+    }
+  }
+
+  private def callCellUpdateWebhooks(updates: Seq[CellUpdate]): Unit = {
+    // logger.info(s"updates: $updates")
+    updates.foreach { update =>
+      val jsonStr = writeToString(
+        SubscribeToCellWebhookRequest(value = update.sourceValue, result = evaluatedResultFormat(update.result))
+      )
+      httpClient
+        .request(
+          HttpRequest
+            .post(update.webhookUrl)
+            .withHeader(CONTENT_TYPE, ofContentType(ContentType.of(JSON)))
+            .withBody(jsonStr.getBytes(UTF_8))
+        )
+        .async()
     }
   }
 
@@ -112,6 +136,20 @@ class Service(db: Option[Db]) {
       case _ =>
         None
     }
+
+  def subscribeToCell(sheetId: String, cellId: String, webhookUrl: String): Option[Unit] = {
+    (normalizeId(sheetId), normalizeId(cellId), checkUrl(webhookUrl)) match {
+      case (Some(sheetId), Some(cellId), true) =>
+        Option(sheets.get(sheetId)) match {
+          case Some(sheet) =>
+            Some(sheet.addCellSubscription(cellId, webhookUrl))
+          case _ =>
+            None
+        }
+      case _ =>
+        None
+    }
+  }
 
   def getSheet(sheetId: String): Option[Map[String, (String, Either[String, Double])]] =
     normalizeId(sheetId).flatMap(sheetId => Option(sheets.get(sheetId)).map(_.getCellValues))

@@ -1,5 +1,8 @@
 package pkg
 
+import io.activej.http.UrlParser
+
+import scala.util.Try
 import scala.util.matching.Regex
 
 object StringUtils {
@@ -27,5 +30,8 @@ object StringUtils {
     val a = whitespaceRegex.replaceAllIn(id, " ").trim
     if (!a.contains(' ')) Some(a.toLowerCase) else None
   }
+
+  def checkUrl(url: String): Boolean =
+    Try(UrlParser.parse(url)).isSuccess
 
 }

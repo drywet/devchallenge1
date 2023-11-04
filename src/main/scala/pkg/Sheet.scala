@@ -2,7 +2,7 @@ package pkg
 
 import com.github.plokhotnyuk.jsoniter_scala.core.writeToString
 import pkg.CalcParser.parseExpression
-import pkg.Model.{BackwardPass, DbKey, DbValue, ForwardPass, Pass}
+import pkg.Model.{BackwardPass, CellUpdate, DbKey, DbValue, ForwardPass, Pass}
 import pkg.StringUtils.normalizeFormula
 
 import java.nio.charset.StandardCharsets.UTF_8
@@ -18,7 +18,9 @@ trait Sheet {
   def getCellValues: Map[String, (String, Either[String, Double])]
 
   /** @return evaluatedResult: Some on success, None otherwise */
-  def putCellValue(id: String, sourceValue: String): Option[Either[String, Double]]
+  def putCellValue(id: String, sourceValue: String): Option[(Either[String, Double], Seq[CellUpdate])]
+
+  def addCellSubscription(id: String, webhookUrl: String): Unit
 
 }
 
@@ -31,8 +33,9 @@ trait CellEvaluator {
 
 class SheetImpl(val sheetId: String, db: Option[Db]) extends Sheet with CellEvaluator {
 
-  private val cells: mutable.HashMap[String, Cell] = new mutable.HashMap()
-  private val lock: StampedLock                    = new StampedLock()
+  private val cells: mutable.HashMap[String, Cell]                               = new mutable.HashMap()
+  private val cellSubscriptionUrls: mutable.HashMap[String, mutable.Set[String]] = new mutable.HashMap()
+  private val lock: StampedLock                                                  = new StampedLock()
 
   /** @return Option[(sourceValue, evaluatedResult)] - Some if the cell exists, None otherwise */
   def getCellValue(id: String): Option[(String, Either[String, Double])] = {
@@ -77,29 +80,51 @@ class SheetImpl(val sheetId: String, db: Option[Db]) extends Sheet with CellEval
    * If evaluation or deps checks fail, the cell value is reverted or the cell is removed;
    * otherwise, on success, put the cell to the top cells sets of its bottom cells and remove the cell from the top cells sets of no longer referenced cells 
    *
-   * @return evaluatedResult: Some on success, None otherwise */
-  def putCellValue(id: String, sourceValue: String): Option[Either[String, Double]] = {
+   * @return Option(evaluatedResult and a list of updated cells) Some on success, None otherwise */
+  def putCellValue(id: String, sourceValue: String): Option[(Either[String, Double], Seq[CellUpdate])] = {
     require(id.nonEmpty, "Cell id should be non-empty")
     val lockStamp = lock.writeLock()
     try {
       val result = putCellValueImpl(id = id, sourceValue = sourceValue)
-      result.foreach(_ =>
+      result.map { case (result, allTopCellsPossiblyModified) =>
         db.foreach { db =>
+          // Only storing source values to the DB, so no need to store top cells' resulting values
           val key   = writeToString(DbKey(sheetId = sheetId, cellId = id))
           val value = writeToString(DbValue(sourceValue))
           db.db.put(key.getBytes(UTF_8), value.getBytes(UTF_8))
         }
-      )
-      result
+        val allTopCellUpdates: Seq[CellUpdate] = for {
+          cell <- allTopCellsPossiblyModified
+          url  <- cellSubscriptionUrls.getOrElse(cell.name, Set.empty)
+        } yield CellUpdate(
+          cellId = cell.name,
+          webhookUrl = url,
+          sourceValue = cell.value.source,
+          result = cell.value.evaluated
+        )
+        val thisCellUpdate: Seq[CellUpdate] = cellSubscriptionUrls
+          .getOrElse(id, Set.empty)
+          .toSeq
+          .map(url =>
+            CellUpdate(
+              cellId = id,
+              webhookUrl = url,
+              sourceValue = sourceValue,
+              result = result
+            )
+          )
+        val cellUpdates: Seq[CellUpdate] = thisCellUpdate ++ allTopCellUpdates
+        (result, cellUpdates)
+      }
     } finally
       lock.unlockWrite(lockStamp)
   }
 
   /** @return evaluatedResult: Some on success, None otherwise */
-  private def putCellValueImpl(id: String, sourceValue: String): Option[Either[String, Double]] = {
+  private def putCellValueImpl(id: String, sourceValue: String): Option[(Either[String, Double], Seq[Cell])] = {
     val existingCell      = cells.get(id)
     val previousCellValue = existingCell.map(_.value)
-    val result: Option[(Cell, Set[Cell], Set[Cell])] =
+    val result: Option[(Cell, Set[Cell], Set[Cell], Seq[Cell])] =
       // Optimisation: early check
       if (previousCellValue.forall(_.source != sourceValue)) {
         // Previous source value changed or doesn't exist
@@ -118,24 +143,25 @@ class SheetImpl(val sheetId: String, db: Option[Db]) extends Sheet with CellEval
               val newlyReferencedCells = cell.value.bottomCells -- previousCellValue.bottomCells
               if (!hasCircularDeps(cell, newlyReferencedCells)) {
                 val evaluatedResultChanged = previousCellValue.evaluated != evaluatedResult
-                if (!evaluatedResultChanged || reevaluateTopCells(cell)) {
+                val allTopCells            = reevaluateTopCells(cell)
+                if (!evaluatedResultChanged || allTopCells.isDefined) {
                   val noLongerReferencedCells = previousCellValue.bottomCells -- cell.value.bottomCells
-                  Some((cell, noLongerReferencedCells, newlyReferencedCells))
+                  Some((cell, noLongerReferencedCells, newlyReferencedCells, allTopCells.getOrElse(Seq.empty)))
                 } else None
               } else None
             case None =>
-              Some((cell, Set.empty[Cell], cell.value.bottomCells))
+              Some((cell, Set.empty[Cell], cell.value.bottomCells, Seq.empty))
           }
         }
       } else {
         // Previous source value exists, but didn't change
-        Some((existingCell.get, Set.empty, Set.empty))
+        Some((existingCell.get, Set.empty, Set.empty, Seq.empty))
       }
     result match {
-      case Some((cell, noLongerReferencedCells, newlyReferencedCells)) =>
+      case Some((cell, noLongerReferencedCells, newlyReferencedCells, allTopCellsPossiblyModified)) =>
         noLongerReferencedCells.foreach(_.value.topCells -= cell)
         newlyReferencedCells.foreach(_.value.topCells += cell)
-        Some(cell.value.evaluated)
+        Some((cell.value.evaluated, allTopCellsPossiblyModified))
       case None =>
         existingCell match {
           case Some(existingCell) => existingCell.value = previousCellValue.get
@@ -234,25 +260,25 @@ class SheetImpl(val sheetId: String, db: Option[Db]) extends Sheet with CellEval
   }
 
   /** @return true on success, false otherwise */
-  private def reevaluateTopCells(cell: Cell): Boolean = {
-    val topCells: IndexedSeq[Cell] = allTopCellsTopologicallySorted(cell)
-    var i                          = 0
-    var evaluationFailed           = false
-    while (i < topCells.size && !evaluationFailed) {
-      topCells(i).value.parsed.evaluate()(cellEvaluator = this) match {
+  private def reevaluateTopCells(cell: Cell): Option[Seq[Cell]] = {
+    val allTopCells: IndexedSeq[Cell] = allTopCellsTopologicallySorted(cell)
+    var i                             = 0
+    var evaluationFailed              = false
+    while (i < allTopCells.size && !evaluationFailed) {
+      allTopCells(i).value.parsed.evaluate()(cellEvaluator = this) match {
         case Some(evaluatedResult) =>
-          topCells(i).value.previousEvaluated = Some(topCells(i).value.evaluated)
-          topCells(i).value.evaluated = evaluatedResult
+          allTopCells(i).value.previousEvaluated = Some(allTopCells(i).value.evaluated)
+          allTopCells(i).value.evaluated = evaluatedResult
         case None =>
           evaluationFailed = true
       }
       i += 1
     }
     if (evaluationFailed) {
-      (0 until (i - 1)).foreach(j => topCells(j).value.evaluated = topCells(j).value.previousEvaluated.get)
+      (0 until (i - 1)).foreach(j => allTopCells(j).value.evaluated = allTopCells(j).value.previousEvaluated.get)
     }
-    (0 until i).foreach(j => topCells(j).value.previousEvaluated = None)
-    !evaluationFailed
+    (0 until i).foreach(j => allTopCells(j).value.previousEvaluated = None)
+    if (!evaluationFailed) Some(allTopCells) else None
   }
 
   /** Observation: iterative topological sorting is a few times faster than construction of the tree from scratch, but
@@ -286,6 +312,17 @@ class SheetImpl(val sheetId: String, db: Option[Db]) extends Sheet with CellEval
   /** @return Some if the cell exists, None otherwise */
   override def getEvaluatedCellValue(id: String): Option[Either[String, Double]] =
     cells.get(id).map(_.value.evaluated)
+
+  override def addCellSubscription(id: String, webhookUrl: String): Unit = {
+    require(id.nonEmpty, "Cell id should be non-empty")
+    require(webhookUrl.nonEmpty, "webhookUrl should be non-empty")
+    val lockStamp = lock.writeLock()
+    try {
+      val urls: mutable.Set[String] = cellSubscriptionUrls.getOrElseUpdate(id, mutable.Set())
+      urls += webhookUrl
+    } finally
+      lock.unlockWrite(lockStamp)
+  }
 
   /** For testing */
   private[pkg] def getCell(id: String): Option[Cell] = cells.get(id)

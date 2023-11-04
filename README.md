@@ -20,12 +20,19 @@ devchallenge1_jkhdfbnsk3  | [info] running pkg.Main
 
 May need to wait a few extra seconds for the HTTP server to start.
 
-Request example:
+Request examples:
 
 ```
 curl -X POST 'http://localhost:8080/api/v1/sheet1/CeLl3' -d '{"value":"123"}'
 
 {"value":"123","result":"123"}
+
+
+# http-server -p 8000
+curl -X POST 'http://localhost:8080/api/v1/sheet1/a1/subscribe' -d '{"webhook_url":"https://localhost:8000/a1"}'
+curl -X POST 'http://localhost:8080/api/v1/sheet1/a1' -d '{"value":"123"}'
+{"value":"123","result":"123"}
+# http-server gets an update: POST /a1  {"value":"123","result":"123"} 
 ```
 
 ### Running tests
@@ -111,6 +118,47 @@ GET /api/v1/:sheet_id
      "var3": {"value": "=var1+var2", "result": "3"}
    }
 ```
+
+#### Finals extra tasks
+
+1) Add to existing spreadsheet backend support of the following functions:
+
+```
+SUM
+"=SUM(1, 2)" => {"value:": "=SUM(1, 2)", "result": "3"}
+"=SUM(var1, var2)" => {"value:": "=SUM(var1, var2)", "result": "3"}
+"=SUM(var1, 2, var3)" => {"value:": "=SUM(var3, 2, var3)", "result": "6"}
+
+AVG
+"=AVG(1, 2)" => {"value:": "=AVG(1, 2)", "result": "1.5"}"
+"=AVG(var1, var2)" => {"value:": "=AVG(var1, var2)", "result": "1.5"}"
+"=AVG(var1, 2, var3)" => {"value:": "=AVG(1, 2, var3)", "result": "2"}"
+
+MIN
+"=MIN(1, 2)" => {"value:": "=AVG(1, 2)", "result": "1"}"
+"=MIN(var1, var2)" => {"value:": "=MIN(var1, var2)", "result": "1"}"
+"=MIN(-1,  var1, var2, var3)" => {"value:": "=MIN(-1,  var1, var2, var3)", "result": "-1"}"
+
+MAX
+"=MAX(1, 2)" => {"value:": "=MAX(1, 2)", "result": "2"}"
+"=MAX(var1, var2)" => {"value:": "=MAX(var1, var2)", "result": "2"}"
+"=MAX(-1,  var1, var2, var3)" => {"value:": "=MAX(-1,  var1, var2, var3)", "result": "3"}"
+```
+
+2) Implement subscriptions with webhooks
+
+```
+POST /api/v1/devchallenge-xx/var3/subscribe with {"webhook_url": "https://..."}
+Response 201 with {"webhook_url": "https://"}
+```
+
+As a user, I expect to receive an HTTP POST request on the given webhook_url with the following payload:
+
+```
+{"value": "=var1+var2", "result": "3"}
+```
+
+whenever the result of the var3 is updated.
 
 ### Requirements
 

@@ -4,6 +4,7 @@ import io.activej.config.Config;
 import io.activej.config.ConfigModule;
 import io.activej.eventloop.Eventloop;
 import io.activej.eventloop.inspector.ThrottlingController;
+import io.activej.http.AsyncHttpClient;
 import io.activej.http.AsyncHttpServer;
 import io.activej.http.AsyncServlet;
 import io.activej.inject.annotation.Inject;
@@ -18,7 +19,11 @@ import io.activej.worker.WorkerPoolModule;
 import io.activej.worker.WorkerPools;
 import io.activej.worker.annotation.Worker;
 
+import javax.net.ssl.SSLContext;
 import java.net.InetSocketAddress;
+import java.security.NoSuchAlgorithmException;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 import static io.activej.config.Config.ofSystemProperties;
 import static io.activej.config.converter.ConfigConverters.ofInetSocketAddress;
@@ -26,7 +31,7 @@ import static io.activej.config.converter.ConfigConverters.ofInteger;
 import static io.activej.inject.module.Modules.combine;
 import static io.activej.launchers.initializers.Initializers.*;
 
-@SuppressWarnings("WeakerAccess")
+@SuppressWarnings({"WeakerAccess", "unused"})
 public abstract class HttpServerLauncher extends Launcher {
 
     protected final int port;
@@ -78,6 +83,26 @@ public abstract class HttpServerLauncher extends Launcher {
                 .with("http.listenAddresses", Config.ofValue(ofInetSocketAddress(), new InetSocketAddress(port)))
                 .with("workers", "" + workers)
                 .overrideWith(ofSystemProperties("config"));
+    }
+
+    @Provides
+    SSLContext sslContext() {
+        try {
+            return SSLContext.getDefault();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Provides
+    Executor executor() {
+        return Executors.newCachedThreadPool();
+    }
+
+    @Provides
+    AsyncHttpClient client(Eventloop eventloop, SSLContext sslContext, Executor executor) {
+        return AsyncHttpClient.create(eventloop)
+                .withSslEnabled(sslContext, executor);
     }
 
     @Override

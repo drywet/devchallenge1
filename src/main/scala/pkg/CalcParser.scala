@@ -12,8 +12,6 @@ import scala.util.{Failure, Success}
  * Extended with support for float numbers and variables */
 object CalcParser {
 
-  private val debug: Boolean = true // TODO 1
-
   private val logger: Logger = LoggerFactory.getLogger(this.getClass)
 
   private val Dot: CharPredicate       = CharPredicate('.')
@@ -39,10 +37,10 @@ object CalcParser {
       case Success(expr) =>
         Some(expr)
       case Failure(e: ParseError) =>
-        if (debug) logger.warn(s"Cell $cellId expression is not valid: ${parser.formatError(e)}")
+        logger.warn(s"Cell $cellId expression is not valid: ${parser.formatError(e)}")
         None
       case Failure(e) =>
-        if (debug) logger.warn(s"Cell $cellId unexpected error during parsing run: $e")
+        logger.warn(s"Cell $cellId unexpected error during parsing run: $e")
         None
     }
   }
